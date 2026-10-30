@@ -1,0 +1,123 @@
+{
+  lib,
+  duckdb,
+  fetchFromGitHub,
+  writeText,
+  callPackage,
+}:
+
+let
+  versions = lib.importJSON ./versions.json;
+
+  duckdbSrc = fetchFromGitHub {
+    owner = "duckdb";
+    repo = "duckdb";
+    tag = "v${versions.version}";
+    inherit (versions) hash;
+  };
+
+  # callPackage adds override/overrideDerivation, which are not extensions
+  available = removeAttrs (callPackage ./extensions { inherit duckdbSrc; }) [
+    "override"
+    "overrideDerivation"
+  ];
+
+  # built from DuckDB's own tree and linked by default, as in nixpkgs
+  inTreeExtensions = [
+    "autocomplete"
+    "core_functions"
+    "icu"
+    "json"
+    "parquet"
+    "tpcds"
+    "tpch"
+  ];
+
+  # The requested extensions and what they need, each after its own
+  # dependencies, since that is the order DuckDB registers them in.
+  addWithDependencies =
+    acc: ext:
+    if lib.any (seen: seen.name == ext.name) acc then
+      acc
+    else
+      lib.foldl' addWithDependencies acc (map (name: available.${name}) ext.dependencies) ++ [ ext ];
+  withDependencies = lib.foldl' addWithDependencies [ ];
+
+  mkDuckdb =
+    requested:
+    let
+      selected = withDependencies requested;
+      unlinkable = lib.filter (ext: !ext.linkable) selected;
+
+      # Out-of-tree extensions are built from sources prepared by Nix, since
+      # CMake cannot reach the network in the build sandbox. They are linked
+      # into DuckDB, so they need no signature and no extension directory.
+      extensionConfig = writeText "duckdb-extensions.cmake" (
+        lib.concatMapStrings (ext: ''
+          duckdb_extension_load(${ext.name}
+            SOURCE_DIR "''${PROJECT_SOURCE_DIR}/extension_external/${ext.name}"
+            ${lib.optionalString (
+              ext.include != null
+            ) ''INCLUDE_DIR "''${PROJECT_SOURCE_DIR}/extension_external/${ext.name}/${ext.include}"''}
+            EXTENSION_VERSION "${builtins.substring 0 10 ext.rev}")
+          duckdb_extension_statically_link(${ext.name})
+        '') selected
+      );
+    in
+    lib.throwIf (unlinkable != [ ])
+      "${
+        lib.concatMapStringsSep ", " (ext: ext.name) unlinkable
+      }: C API extensions can only be loaded at runtime, not linked in"
+      (
+        duckdb.overrideAttrs (
+          old:
+          {
+            inherit (versions) version rev;
+
+            src = duckdbSrc;
+
+            buildInputs = old.buildInputs ++ lib.concatMap (ext: ext.buildInputs) selected;
+            nativeBuildInputs = old.nativeBuildInputs ++ lib.concatMap (ext: ext.nativeBuildInputs) selected;
+
+            cmakeFlags =
+              # nixpkgs points this at in_tree_extensions.cmake, which 2.0 reorganised
+              (builtins.filter (flag: !lib.hasPrefix "-DDUCKDB_EXTENSION_CONFIGS:STRING=" flag) old.cmakeFlags)
+              ++ [
+                # 2.0 takes the release version and commit separately
+                (lib.cmakeFeature "DUCKDB_EXPLICIT_VERSION" "v${versions.version}")
+                (lib.cmakeFeature "GIT_COMMIT_HASH" versions.rev)
+                (lib.cmakeFeature "BUILD_EXTENSIONS" (lib.concatStringsSep ";" inTreeExtensions))
+                # link the extensions as well as build them
+                (lib.cmakeBool "LINK_CORE_EXTENSIONS" true)
+              ]
+              ++ lib.optional (selected != [ ]) (
+                lib.cmakeFeature "DUCKDB_EXTENSION_CONFIGS" "${extensionConfig}"
+              );
+
+            # doInstallCheck stays as nixpkgs sets it, so DuckDB's own test suite runs.
+
+            # passthru is not part of the derivation hash
+            passthru =
+              # pythonHash belongs to the nixpkgs release; python3Packages.duckdb
+              # must fail to evaluate until it is ported rather than use a stale one
+              (removeAttrs old.passthru [ "pythonHash" ]) // {
+                extensions = available;
+                linkedExtensions = selected;
+                withExtensions = select: mkDuckdb (select available);
+              };
+          }
+          # Only set when there is something to add: the build without extensions
+          # must not change when this machinery does, or Nix rebuilds it for nothing.
+          // lib.optionalAttrs (selected != [ ]) {
+            postPatch = (old.postPatch or "") + ''
+              mkdir -p extension_external
+              ${lib.concatMapStrings (ext: ''
+                cp -R ${ext.source} extension_external/${ext.name}
+                chmod -R u+w extension_external/${ext.name}
+              '') selected}
+            '';
+          }
+        )
+      );
+in
+mkDuckdb [ ]

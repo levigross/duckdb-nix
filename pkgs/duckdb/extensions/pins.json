@@ -1,0 +1,206 @@
+{
+  "avro": {
+    "hash": "sha256-8e+nuPU7JPt0sHgYI0OykzJPsS/dMj0y/ny36qKJQD0=",
+    "owner": "duckdb",
+    "patches": true,
+    "repo": "duckdb-avro",
+    "rev": "758fb6063cbb6da49b2e1c16c4044cfcafefc52f",
+    "submodules": {
+      "third_party/avro-c": {
+        "hash": "sha256-+DbgVayOG1BjnzkJ7RuEXHVT7ANHWa3sNG79Yjvb3Mc=",
+        "owner": "duckdb",
+        "repo": "duckdb-avro-c",
+        "rev": "51ab9b2d38d990dcf9629288fd308a674199ec2e"
+      }
+    }
+  },
+  "aws": {
+    "hash": "sha256-YjOMPH2jdQ8s8VYXM+lhhvx0Lbp4KT/YVc5Yg67w3mI=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-aws",
+    "rev": "16ae9c135300f750478d648c2496f2952a6f2827"
+  },
+  "azure": {
+    "hash": "sha256-UJBf8lsJqaRpIwqR9+tGpVx3h5OjLiPAbgZl6L5Hemw=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-azure",
+    "rev": "906e92458c33309e5d9413e14a85aad7b4d2275f"
+  },
+  "delta": {
+    "hash": "sha256-ApeQyQF6QEN0FSuuX3kgoSoO6xXyvhu25MH50U+O4ps=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-delta",
+    "rev": "9dcfb65b99fcafaa068222c2490abc143da4cc8e"
+  },
+  "ducklake": {
+    "hash": "sha256-CfGNeFJlTjLS5/2GEg4EU8Ph9I8mLPax96wCNOIrgZk=",
+    "owner": "duckdb",
+    "patches": true,
+    "repo": "ducklake",
+    "rev": "417a9117f590e8141742ac0579d02f6a90162e37"
+  },
+  "encodings": {
+    "hash": "sha256-EF2lbkvQwXjl79VdIlzvsVsxq3VvujGHZO1ELmiA7P4=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-encodings",
+    "rev": "2d1447a890302d9dff23ac7c8119ddce53ee65ff"
+  },
+  "excel": {
+    "hash": "sha256-6Z5MLv9aT09KMSwvgsTWsWpst1nmBZ90xEHX/r98ZEk=",
+    "include": "src/excel/include",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-excel",
+    "rev": "81bb84b115b97cc4edec4827714cac80da0127e1"
+  },
+  "fts": {
+    "hash": "sha256-Y8MPRvD5XFsLpPEsVzALq3jQk9vqEidGBcvPDHdjkMc=",
+    "owner": "duckdb",
+    "patches": true,
+    "repo": "duckdb-fts",
+    "rev": "2266e67d01c737cb65114e77c7c672e58869a635"
+  },
+  "glue": {
+    "hash": "sha256-rzcS1bkBF/FsBH8csejsegw0tDuXKMpOvN6f0D9BIOU=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-aws-glue",
+    "rev": "8b310c81f227cf7630fd4ff52925f208f0d35278"
+  },
+  "httpfs": {
+    "hash": "sha256-Ni2stJrRSbTkHs+SjfuumtrhIVO917Q9uh91O2YalPM=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-httpfs",
+    "rev": "77392a72077a85897db2519fae11e2c0da972b8a"
+  },
+  "iceberg": {
+    "hash": "sha256-zwhf6ePplnWagroxJ7hojgJrllRSRX66/9wH+qi3Fzw=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-iceberg",
+    "rev": "4c0c0874c48ec82a3e29910554891d04bcc0e988"
+  },
+  "inet": {
+    "hash": "sha256-8YeYuowhFz4XctNiAU7SG+QjnuQ416erAPjKpexk7Rw=",
+    "include": "src/include",
+    "owner": "duckdb",
+    "patches": true,
+    "repo": "duckdb-inet",
+    "rev": "fe7f60bb60245197680fb07ecd1629a1dc3d91c8"
+  },
+  "lance": {
+    "hash": "sha256-R5ODm3yyPZdN+OAJdJHPxbfDyRUcd9CM8Ri0aOQRwO0=",
+    "owner": "lance-format",
+    "patches": false,
+    "repo": "lance-duckdb",
+    "rev": "86118537da79138e6ec5c7358f2384c7ae650ab0"
+  },
+  "legacy_parser": {
+    "hash": "sha256-gM+bqkECbNB9Ko72T7hWnvV4lX9LIssbi8pVnk2u/7I=",
+    "include": "src/include",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-legacy-parser",
+    "rev": "bcdf276132fe3a09afcc707c1cdff39096989404"
+  },
+  "mysql_scanner": {
+    "hash": "sha256-d3Ly/Sj7xRX1bL9zKLgcRyOYhdI0vXuTVYhdDuv88co=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-mysql",
+    "rev": "f7fc0d42716534aa5ad48626d21ced9807b33967",
+    "submodules": {
+      "database-connector": {
+        "hash": "sha256-ARgCKrySFbAuSUp3A2PGY9/538qGha9zzG43hlMBgFo=",
+        "owner": "duckdb",
+        "repo": "database-connector",
+        "rev": "c305670b5729cc6dbda8d395eeb63b4d1487c064"
+      }
+    }
+  },
+  "odbc_scanner": {
+    "hash": "sha256-H3seSmjDKK5R+xYyEjOe1zGpM7kch8I0qqD/5KzUWQg=",
+    "owner": "duckdb",
+    "patches": true,
+    "repo": "odbc-scanner",
+    "rev": "a33698df40f95cc3eb339703dcb085497eabfca3"
+  },
+  "postgres_scanner": {
+    "hash": "sha256-97aAF2O4mZLPSmIko8jdV2orR/2M8i13SU1a1yXV8sA=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-postgres",
+    "rev": "c0f5a3c0c4b68b02afbf669d36d7f0e503985c88",
+    "submodules": {
+      "database-connector": {
+        "hash": "sha256-ARgCKrySFbAuSUp3A2PGY9/538qGha9zzG43hlMBgFo=",
+        "owner": "duckdb",
+        "repo": "database-connector",
+        "rev": "c305670b5729cc6dbda8d395eeb63b4d1487c064"
+      }
+    }
+  },
+  "quack": {
+    "hash": "sha256-S3/yaeTiJoA3efiMPksLVGlfKm3JH7I3tzuub9v3IQg=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-quack",
+    "rev": "f96420ed46aee9c42064bdb99ddfd1230d6c0086"
+  },
+  "spatial": {
+    "hash": "sha256-bhLRwuN8SfW1oDCaiRpdZDh3kTSndiPs+sHoXQ+MSrc=",
+    "include": "src/spatial",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-spatial",
+    "rev": "4e066c17e2d1f24625baff4c62430d68ceb4e41f"
+  },
+  "sqlite_scanner": {
+    "hash": "sha256-xVrOkXXs4ahXPgTkshgwZyg1D0mPRGYh+bm5eEUXwpg=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-sqlite",
+    "rev": "e223dc01493414cef6d5960744f1e048d59fc592",
+    "submodules": {
+      "database-connector": {
+        "hash": "sha256-ARgCKrySFbAuSUp3A2PGY9/538qGha9zzG43hlMBgFo=",
+        "owner": "duckdb",
+        "repo": "database-connector",
+        "rev": "c305670b5729cc6dbda8d395eeb63b4d1487c064"
+      }
+    }
+  },
+  "sqlsmith": {
+    "hash": "sha256-Mqxz2P8C8lhS6mVMM9slnnTaF6hRoqjczJH9SjyK83c=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-sqlsmith",
+    "rev": "00c4e5796c4e3e1f98ff4adec55d87326d2d2f3c"
+  },
+  "unity_catalog": {
+    "hash": "sha256-ckkEODsfQH+hI0QbODWRUOWe9PodsbMxMzkpob/YAM4=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "unity_catalog",
+    "rev": "cc59382f5292997293a57c2ab336c9aa97c05f2d"
+  },
+  "vortex": {
+    "hash": "sha256-yf4AO6msgukdjQuDp8u8z9j4+WPzLLRgXQHr8sGU7Uk=",
+    "owner": "vortex-data",
+    "patches": true,
+    "repo": "duckdb-vortex",
+    "rev": "318c7c84e63268a9e4ceee55a355133460304314"
+  },
+  "vss": {
+    "hash": "sha256-aNf65cZSR3S1JU5SNOSKuvlx436G81lSLRvzyCbWtkk=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-vss",
+    "rev": "3685131eacaf0d467d430be5c4e5e7d1d483437a"
+  }
+}
