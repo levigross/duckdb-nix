@@ -46,18 +46,44 @@ let
       cargoLock = lockFile;
       outputHashes = gitHashes;
 
-      # Crane vendors a git crate as `cargo package` would, and vortex-duckdb's
-      # `include` list leaves out cpp/include/table_function.h, which its own
-      # build script needs. Upstream does not notice: Corrosion builds from a
-      # full checkout. Put the crate's cpp directory back.
+      # Crane vendors a git crate as `cargo package` would, keeping only the
+      # files in the crate's `include` list and failing to copy the workspace
+      # README that crates inherit. The crates need more than that: the build
+      # script of vortex-duckdb reads cpp/include/table_function.h and
+      # cbindgen.toml, and the crates include their README as documentation.
+      # Upstream does not notice, since Corrosion builds from a full checkout.
+      # Put back every file each vendored crate lacks, keeping the Cargo.toml
+      # crane resolved.
       overrideVendorGitCheckout =
         packages: drv:
         if lib.any (p: p.name == "vortex-duckdb") packages then
           drv.overrideAttrs (old: {
             postInstall = (old.postInstall or "") + ''
+              chmod -R u+w "$out"/*/
+
+              # the crates' own directories, found by the name in their manifest
+              find . -name Cargo.toml -not -path './target/*' | while read -r manifest; do
+                name="$(sed -n 's/^name = "\(.*\)"$/\1/p' "$manifest" | head -1)"
+                for vendored in "$out/$name"-[0-9]*; do
+                  [ -d "$vendored" ] && cp -rn "$(dirname "$manifest")/." "$vendored/"
+                done
+              done
+
+              # the README they inherit from the workspace root
+              for vendored in "$out"/*/; do
+                [ -e "$vendored/README.md" ] || cp README.md "$vendored/README.md"
+              done
+
               crate="$out/vortex-duckdb-${(lib.findFirst (p: p.name == "vortex-duckdb") null packages).version}"
-              chmod -R u+w "$crate"
-              cp -rT vortex-duckdb/cpp "$crate/cpp"
+
+              # The build script regenerates include/vortex.h with cbindgen, which
+              # runs `cargo metadata` on the crate. That needs the crate's sibling
+              # path dependencies laid out as in the monorepo, and a flat vendor
+              # directory is not. Use the vortex.h that is committed instead. It is
+              # regenerated on every upstream build, so it may in principle lag the
+              # Rust sources; the extension's smoke test exercises the boundary.
+              substituteInPlace "$crate/build.rs" \
+                --replace-fail "cbindgen_rust2c(&crate_dir);" "/* cbindgen_rust2c skipped, see vortex.nix */"
             '';
           })
         else
