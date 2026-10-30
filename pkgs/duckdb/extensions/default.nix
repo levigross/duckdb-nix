@@ -80,8 +80,11 @@ let
     {
       buildInputs ? [ ],
       nativeBuildInputs ? [ ],
-      # the Rust static library the extension links, if any
-      rustLibrary ? null,
+      # The Rust static library the extension links, if it has one: the package
+      # that builds it, the archive inside it, and the CMake variable that is
+      # given the archive's path (which is not always the package's, see
+      # isolate-rust.nix).
+      rust ? null,
       # CMake flags for the DuckDB build. Paths of other derivations go here
       # rather than into postPatch, so that patching never waits on a build.
       cmakeFlags ? [ ],
@@ -116,7 +119,7 @@ let
         name
         buildInputs
         nativeBuildInputs
-        rustLibrary
+        rust
         cmakeFlags
         dependencies
         linkable
@@ -215,7 +218,12 @@ lib.mapAttrs mkExtension {
   };
 
   delta = {
-    rustLibrary = deltaFfi;
+    rust = {
+      package = deltaFfi;
+      archive = "lib/libdelta_kernel_ffi.a";
+      cmakeVariable = "DELTA_KERNEL_FFI_LIBRARY";
+    };
+    # the headers cbindgen generated stay in the package
     cmakeFlags = [ (lib.cmakeFeature "DELTA_KERNEL_FFI_DIR" "${deltaFfi}") ];
     postPatch = ''
       # Upstream clones delta-kernel-rs and runs cargo here. Use the library built
@@ -223,7 +231,7 @@ lib.mapAttrs mkExtension {
       # it now only post-processes the generated C++ header.
       sed -i '/^ExternalProject_Add(/,/^  LOG_OUTPUT_ON_FAILURE ON)/d' CMakeLists.txt
       cat > ffi.cmake <<'EOF'
-      set(DELTA_KERNEL_LIBPATH "''${DELTA_KERNEL_FFI_DIR}/lib/libdelta_kernel_ffi.a")
+      set(DELTA_KERNEL_LIBPATH "''${DELTA_KERNEL_FFI_LIBRARY}")
       add_custom_command(
         OUTPUT "''${DELTA_KERNEL_FFI_HEADER_PATCHED}"
         COMMAND sh ''${CMAKE_CURRENT_SOURCE_DIR}/scripts/ffi/generate_delta_kernel_ffi_header
@@ -237,7 +245,13 @@ lib.mapAttrs mkExtension {
       rm ffi.cmake
       ! grep -q 'ExternalProject_Add' CMakeLists.txt
     '';
-    smoke = "SELECT CASE WHEN count(*) >= 1 THEN 1 ELSE error('delta_scan') END FROM duckdb_functions() WHERE function_name = 'delta_scan'";
+    # an attached Delta database is one table, named after the alias
+    smoke = ''
+      ATTACH 'smoke_delta' AS d (TYPE delta);
+      CREATE TABLE d.d(i INTEGER, s VARCHAR);
+      INSERT INTO d.d VALUES (1, 'a'), (2, 'b'), (3, 'c');
+      SELECT CASE WHEN sum(i) = 6 THEN 1 ELSE error('delta round trip') END FROM delta_scan('smoke_delta');
+    '';
   };
 
   ducklake = {
@@ -311,8 +325,15 @@ lib.mapAttrs mkExtension {
   inet.smoke = "SELECT CASE WHEN '192.168.1.5'::INET <<= '192.168.0.0/16'::INET AND NOT '10.0.0.1'::INET <<= '192.168.0.0/16'::INET THEN 1 ELSE error('inet') END";
 
   lance = {
-    rustLibrary = lanceFfi;
-    cmakeFlags = [ (lib.cmakeFeature "LANCE_FFI_LIBRARY" "${lanceFfi}/lib/liblance_duckdb_ffi.a") ];
+    rust = {
+      package = lanceFfi;
+      archive = "lib/liblance_duckdb_ffi.a";
+      cmakeVariable = "LANCE_FFI_LIBRARY";
+    };
+    smoke = ''
+      COPY (SELECT i AS id, 'row ' || i AS label FROM range(1000) t(i)) TO 'smoke.lance' (FORMAT lance);
+      SELECT CASE WHEN count(*) = 1000 AND sum(id) = 499500 THEN 1 ELSE error('lance round trip') END FROM 'smoke.lance';
+    '';
     postPatch = ''
       # Upstream runs cargo from here. Use the library built separately, and keep
       # the target so the link lines that depend on it still work.
@@ -501,8 +522,11 @@ lib.mapAttrs mkExtension {
   };
 
   vortex = {
-    rustLibrary = vortexFfi;
-    cmakeFlags = [ (lib.cmakeFeature "VORTEX_FFI_LIBRARY" "${vortexFfi}/lib/libvortex_duckdb.a") ];
+    rust = {
+      package = vortexFfi;
+      archive = "lib/libvortex_duckdb.a";
+      cmakeVariable = "VORTEX_FFI_LIBRARY";
+    };
     postPatch = ''
       # Upstream gets Corrosion from git, and has it run cargo, which fetches the
       # vortex repository. Use the library built separately, as the target the
@@ -520,7 +544,12 @@ lib.mapAttrs mkExtension {
       rm ffi.cmake
       ! grep -q -E 'corrosion|cargo|ls-remote' CMakeLists.txt
     '';
-    smoke = "SELECT CASE WHEN count(*) >= 1 THEN 1 ELSE error('vortex') END FROM duckdb_functions() WHERE function_name ILIKE '%vortex%'";
+    # a round trip crosses the Rust and C++ boundary, so it would show a vortex.h
+    # that had fallen behind the Rust sources
+    smoke = ''
+      COPY (SELECT i AS id, 'row ' || i AS label FROM range(1000) t(i)) TO 'smoke.vortex' (FORMAT vortex);
+      SELECT CASE WHEN count(*) = 1000 AND sum(id) = 499500 THEN 1 ELSE error('vortex round trip') END FROM read_vortex('smoke.vortex');
+    '';
   };
 
   vss.smoke = ''

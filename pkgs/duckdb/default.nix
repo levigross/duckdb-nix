@@ -16,6 +16,8 @@ let
     inherit (versions) hash;
   };
 
+  isolateRust = callPackage ./isolate-rust.nix { };
+
   # callPackage adds override/overrideDerivation, which are not extensions
   available =
     removeAttrs
@@ -70,6 +72,22 @@ let
       );
 
       testLoads = lib.unique (lib.concatMap (ext: ext.testLoads) selected);
+
+      # The Rust static libraries of the selected extensions. One keeps its copy
+      # of Rust's standard library to itself; two or more would clash in the
+      # link, so each is given a private one (see isolate-rust.nix).
+      withRust = lib.filter (ext: ext.rust != null) selected;
+      rustArchive = ext: "${ext.rust.package}/${ext.rust.archive}";
+      rustArchives =
+        if lib.length withRust > 1 then
+          let
+            isolated = isolateRust (
+              lib.genAttrs (map (ext: ext.name) withRust) (name: rustArchive available.${name})
+            );
+          in
+          lib.genAttrs (map (ext: ext.name) withRust) (name: "${isolated}/lib/${name}.a")
+        else
+          lib.genAttrs (map (ext: ext.name) withRust) (name: rustArchive available.${name});
 
       # The suite's own configuration, so a skipped test is listed with its
       # reason in the output instead of vanishing from a command line.
@@ -134,6 +152,7 @@ let
                   lib.concatStringsSep ";" (inTreeExtensions ++ map (ext: ext.name) selected)
                 ))
               ]
+              ++ map (ext: lib.cmakeFeature ext.rust.cmakeVariable rustArchives.${ext.name}) withRust
               ++ lib.concatMap (ext: ext.cmakeFlags) selected;
 
             # doInstallCheck stays as nixpkgs sets it, so DuckDB's own test suite runs.

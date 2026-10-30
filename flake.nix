@@ -99,8 +99,8 @@
           name: ext: pkgs.lib.nameValuePair "source-${name}" ext.source
         ) pkgs.duckdb.extensions
         # the Rust part of the extensions that have one, to build it on its own
-        // pkgs.lib.mapAttrs' (name: ext: pkgs.lib.nameValuePair "rust-${name}" ext.rustLibrary) (
-          pkgs.lib.filterAttrs (_: ext: ext.rustLibrary != null) pkgs.duckdb.extensions
+        // pkgs.lib.mapAttrs' (name: ext: pkgs.lib.nameValuePair "rust-${name}" ext.rust.package) (
+          pkgs.lib.filterAttrs (_: ext: ext.rust != null) pkgs.duckdb.extensions
         )
       );
 
