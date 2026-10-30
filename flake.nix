@@ -86,6 +86,12 @@
             e.quack
             e.sqlite_scanner
           ]);
+          # the Rust consumer against the build without tests, for iterating
+          dev-rust-check = import ./rust-consumer-check.nix {
+            inherit pkgs;
+            duckdb = devBuild;
+            extensions = linkable pkgs;
+          };
           dev-keep-going = devBuild;
           # the checks/all-extensions check, against the build without tests
           dev-check = import ./all-extensions-check.nix {

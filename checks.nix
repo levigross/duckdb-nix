@@ -78,4 +78,11 @@ in
     duckdb = withAll;
     extensions = linkable;
   };
+
+  # A Rust program linked against libduckdb finds the extensions.
+  rust-consumer = import ./rust-consumer-check.nix {
+    inherit pkgs;
+    duckdb = withAll;
+    extensions = linkable;
+  };
 }

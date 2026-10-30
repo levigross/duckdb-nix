@@ -1,0 +1,11 @@
+[package]
+name = "rust-consumer"
+version = "0.1.0"
+edition = "2021"
+description = "Uses DuckDB from Rust through a libduckdb that has extensions linked in"
+publish = false
+
+[dependencies]
+# libduckdb-sys links the DuckDB named by DUCKDB_LIB_DIR. Without the default
+# features it does not try pkg-config, vcpkg or a download.
+duckdb = { version = "=1.20000.1", default-features = false }
