@@ -2,8 +2,11 @@
   lib,
   runCommand,
   fetchFromGitHub,
+  callPackage,
   python3,
   duckdbSrc,
+  duckdbVersion,
+  duckdbCraneLib,
   aws-sdk-cpp,
   azure-sdk-for-cpp,
   croaring,
@@ -55,11 +58,33 @@ let
     ];
   };
 
+  # The Rust part of an extension, built here instead of by cargo inside CMake.
+  # It is the unpatched pin, so that its Cargo.lock is the one vendored.
+  lanceFfi = callPackage ./lance.nix {
+    craneLib = duckdbCraneLib;
+    src = fetchPin pins.lance;
+  };
+  deltaFfi = callPackage ./delta.nix {
+    craneLib = duckdbCraneLib;
+    src = fetchPin pins.delta.kernel;
+  };
+  vortexFfi = callPackage ./vortex.nix {
+    craneLib = duckdbCraneLib;
+    src = fetchPin pins.vortex;
+    inherit duckdbSrc duckdbVersion;
+    inherit (pins.vortex) gitHashes;
+  };
+
   mkExtension =
     name:
     {
       buildInputs ? [ ],
       nativeBuildInputs ? [ ],
+      # the Rust static library the extension links, if any
+      rustLibrary ? null,
+      # CMake flags for the DuckDB build. Paths of other derivations go here
+      # rather than into postPatch, so that patching never waits on a build.
+      cmakeFlags ? [ ],
       # extensions that must be linked in before this one
       dependencies ? [ ],
       # C API extensions have their own build and can only be loaded at runtime
@@ -72,6 +97,14 @@ let
       # that must succeed, or { sql; setup ? shell to run first; expectError ?
       # text the SQL must fail with }, for clients that need a server.
       smoke ? null,
+      # Tests of DuckDB's own suite that cannot pass once this extension is
+      # linked in, as [ { reason; paths; } ]. Each needs a reason, because
+      # skipping a test is giving up on it.
+      testSkips ? [ ],
+      # Extensions the suite must load for this extension's tests. It loads only
+      # what a test names, while the product loads everything linked at startup,
+      # so a test that needs an extension this one depends on would otherwise fail.
+      testLoads ? [ ],
     }:
     let
       pin = pins.${name};
@@ -83,8 +116,12 @@ let
         name
         buildInputs
         nativeBuildInputs
+        rustLibrary
+        cmakeFlags
         dependencies
         linkable
+        testSkips
+        testLoads
         ;
       smoke = lib.mapNullable (
         s:
@@ -177,6 +214,32 @@ lib.mapAttrs mkExtension {
     };
   };
 
+  delta = {
+    rustLibrary = deltaFfi;
+    cmakeFlags = [ (lib.cmakeFeature "DELTA_KERNEL_FFI_DIR" "${deltaFfi}") ];
+    postPatch = ''
+      # Upstream clones delta-kernel-rs and runs cargo here. Use the library built
+      # separately, and keep the `delta_kernel` target the extension depends on:
+      # it now only post-processes the generated C++ header.
+      sed -i '/^ExternalProject_Add(/,/^  LOG_OUTPUT_ON_FAILURE ON)/d' CMakeLists.txt
+      cat > ffi.cmake <<'EOF'
+      set(DELTA_KERNEL_LIBPATH "''${DELTA_KERNEL_FFI_DIR}/lib/libdelta_kernel_ffi.a")
+      add_custom_command(
+        OUTPUT "''${DELTA_KERNEL_FFI_HEADER_PATCHED}"
+        COMMAND sh ''${CMAKE_CURRENT_SOURCE_DIR}/scripts/ffi/generate_delta_kernel_ffi_header
+                ''${CMAKE_CURRENT_SOURCE_DIR}/scripts/ffi
+                ''${DELTA_KERNEL_FFI_DIR}/ffi-headers/delta_kernel_ffi.hpp
+                ''${CMAKE_BINARY_DIR}/codegen/include
+        VERBATIM)
+      add_custom_target(''${KERNEL_NAME} DEPENDS "''${DELTA_KERNEL_FFI_HEADER_PATCHED}")
+      EOF
+      sed -i '/^# Add rust_example as a CMake target/r ffi.cmake' CMakeLists.txt
+      rm ffi.cmake
+      ! grep -q 'ExternalProject_Add' CMakeLists.txt
+    '';
+    smoke = "SELECT CASE WHEN count(*) >= 1 THEN 1 ELSE error('delta_scan') END FROM duckdb_functions() WHERE function_name = 'delta_scan'";
+  };
+
   ducklake = {
     buildInputs = [ croaring ];
     # a catalog and its data in local files
@@ -246,6 +309,24 @@ lib.mapAttrs mkExtension {
   };
 
   inet.smoke = "SELECT CASE WHEN '192.168.1.5'::INET <<= '192.168.0.0/16'::INET AND NOT '10.0.0.1'::INET <<= '192.168.0.0/16'::INET THEN 1 ELSE error('inet') END";
+
+  lance = {
+    rustLibrary = lanceFfi;
+    cmakeFlags = [ (lib.cmakeFeature "LANCE_FFI_LIBRARY" "${lanceFfi}/lib/liblance_duckdb_ffi.a") ];
+    postPatch = ''
+      # Upstream runs cargo from here. Use the library built separately, and keep
+      # the target so the link lines that depend on it still work.
+      sed -i -e '/^set(RUST_TARGET_DIR/,/^target_link_libraries(''${EXTENSION_NAME} debug/{/^target_link_libraries(''${EXTENSION_NAME} debug/!d}' CMakeLists.txt
+      cat > ffi.cmake <<'EOF'
+      set(RUST_DEBUG_LIB "''${LANCE_FFI_LIBRARY}")
+      set(RUST_RELEASE_LIB "''${LANCE_FFI_LIBRARY}")
+      add_custom_target(lance_duckdb_ffi_build)
+      EOF
+      sed -i '/^# Build and link Rust staticlib/r ffi.cmake' CMakeLists.txt
+      rm ffi.cmake
+      ! grep -q 'cargo build' CMakeLists.txt
+    '';
+  };
 
   legacy_parser.smoke = "SELECT CASE WHEN count(*) = 1 THEN 1 ELSE error('enable_legacy_parser') END FROM duckdb_settings() WHERE name = 'enable_legacy_parser'";
 
@@ -322,6 +403,9 @@ lib.mapAttrs mkExtension {
       openssl
     ];
     smoke = "SELECT CASE WHEN count(*) >= 1 THEN 1 ELSE error('quack_serve') END FROM duckdb_functions() WHERE function_name = 'quack_serve'";
+    # quack_serve needs the crypto module of httpfs, and the tests require only
+    # quack. In the product httpfs is loaded at startup like the rest.
+    testLoads = [ "httpfs" ];
   };
 
   spatial = {
@@ -382,12 +466,20 @@ lib.mapAttrs mkExtension {
     '';
   };
 
-  sqlite_scanner.smoke = ''
-    ATTACH ':memory:' AS s (TYPE sqlite);
-    CREATE TABLE s.t(i INTEGER);
-    INSERT INTO s.t VALUES (41), (1);
-    SELECT CASE WHEN (SELECT sum(i) FROM s.t) = 42 THEN 1 ELSE error('sqlite_scanner') END;
-  '';
+  sqlite_scanner = {
+    smoke = ''
+      ATTACH ':memory:' AS s (TYPE sqlite);
+      CREATE TABLE s.t(i INTEGER);
+      INSERT INTO s.t VALUES (41), (1);
+      SELECT CASE WHEN (SELECT sum(i) FROM s.t) = 42 THEN 1 ELSE error('sqlite_scanner') END;
+    '';
+    testSkips = [
+      {
+        reason = "asserts that LOAD sqlite fails because the extension is absent, which cannot hold once it is linked in";
+        paths = [ "test/extension/local_extension_coverage.test" ];
+      }
+    ];
+  };
 
   sqlsmith.smoke = "SELECT CASE WHEN count(*) >= 1 THEN 1 ELSE error('sqlsmith') END FROM duckdb_functions() WHERE function_name = 'sqlsmith'";
 
@@ -406,6 +498,29 @@ lib.mapAttrs mkExtension {
       grep -q '^static unique_ptr<SecretEntry> GetSecret(' src/unity_catalog_extension.cpp
       grep -q '^static bool CatalogTypeIsSupported(' src/storage/uc_schema_entry.cpp
     '';
+  };
+
+  vortex = {
+    rustLibrary = vortexFfi;
+    cmakeFlags = [ (lib.cmakeFeature "VORTEX_FFI_LIBRARY" "${vortexFfi}/lib/libvortex_duckdb.a") ];
+    postPatch = ''
+      # Upstream gets Corrosion from git, and has it run cargo, which fetches the
+      # vortex repository. Use the library built separately, as the target the
+      # extension links, and drop the version lookup that runs git against github.
+      sed -i '/^include(FetchContent)/,/^FetchContent_MakeAvailable(Corrosion)/d' CMakeLists.txt
+      sed -i '/^if(CMAKE_BUILD_TYPE STREQUAL "Release")/,/^include_directories(src\/include)/{/^include_directories(src\/include)/!d}' CMakeLists.txt
+      cat > ffi.cmake <<'EOF2'
+      add_library(''${VORTEX_LIB_NAME} STATIC IMPORTED GLOBAL)
+      set_target_properties(''${VORTEX_LIB_NAME} PROPERTIES
+        IMPORTED_LOCATION "''${VORTEX_FFI_LIBRARY}"
+        INTERFACE_LINK_LIBRARIES "m;dl;pthread")
+
+      EOF2
+      sed -i '/^include_directories(src\/include)/e cat ffi.cmake' CMakeLists.txt
+      rm ffi.cmake
+      ! grep -q -E 'corrosion|cargo|ls-remote' CMakeLists.txt
+    '';
+    smoke = "SELECT CASE WHEN count(*) >= 1 THEN 1 ELSE error('vortex') END FROM duckdb_functions() WHERE function_name ILIKE '%vortex%'";
   };
 
   vss.smoke = ''

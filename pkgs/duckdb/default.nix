@@ -17,10 +17,16 @@ let
   };
 
   # callPackage adds override/overrideDerivation, which are not extensions
-  available = removeAttrs (callPackage ./extensions { inherit duckdbSrc; }) [
-    "override"
-    "overrideDerivation"
-  ];
+  available =
+    removeAttrs
+      (callPackage ./extensions {
+        inherit duckdbSrc;
+        duckdbVersion = "v${versions.version}";
+      })
+      [
+        "override"
+        "overrideDerivation"
+      ];
 
   # built from DuckDB's own tree and linked by default, as in nixpkgs
   inTreeExtensions = [
@@ -62,6 +68,32 @@ let
             EXTENSION_VERSION "${builtins.substring 0 10 ext.rev}")
         '') selected
       );
+
+      testLoads = lib.unique (lib.concatMap (ext: ext.testLoads) selected);
+
+      # The suite's own configuration, so a skipped test is listed with its
+      # reason in the output instead of vanishing from a command line.
+      testConfig = writeText "duckdb-test-config.json" (
+        builtins.toJSON (
+          {
+            description = "Settings for the packaged build";
+            skip_tests = [
+              {
+                reason = "installs an extension over HTTP and checks the response log, which needs network access";
+                paths = [ "test/sql/logging/http_response_log_redaction.test" ];
+              }
+            ]
+            ++ lib.concatMap (ext: ext.testSkips) selected;
+          }
+          // lib.optionalAttrs (testLoads != [ ]) {
+            # This replaces the suite's default set rather than adding to it,
+            # and core_functions is part of that default.
+            statically_loaded_extensions = [ "core_functions" ] ++ testLoads;
+          }
+        )
+      );
+      # where nixpkgs starts the suite, to give it the configuration
+      testCommandPrefix = ''HOME="$(mktemp -d)" '';
     in
     lib.throwIf (unlinkable != [ ])
       "${
@@ -101,9 +133,19 @@ let
                 (lib.cmakeFeature "STATICALLY_LINK_EXTENSIONS" (
                   lib.concatStringsSep ";" (inTreeExtensions ++ map (ext: ext.name) selected)
                 ))
-              ];
+              ]
+              ++ lib.concatMap (ext: ext.cmakeFlags) selected;
 
             # doInstallCheck stays as nixpkgs sets it, so DuckDB's own test suite runs.
+            installCheckPhase =
+              assert lib.assertMsg (lib.hasInfix testCommandPrefix old.installCheckPhase)
+                "nixpkgs' duckdb no longer starts the test suite as expected, so the test configuration cannot be passed";
+              builtins.replaceStrings
+                [ testCommandPrefix ]
+                [
+                  "${testCommandPrefix}DUCKDB_TEST_CONFIG=${testConfig} "
+                ]
+                old.installCheckPhase;
 
             # passthru is not part of the derivation hash
             passthru =
@@ -112,6 +154,8 @@ let
               (removeAttrs old.passthru [ "pythonHash" ]) // {
                 extensions = available;
                 linkedExtensions = selected;
+                # the configuration the test suite is run with
+                inherit testConfig;
                 withExtensions = select: mkDuckdb (select available);
               };
           }
