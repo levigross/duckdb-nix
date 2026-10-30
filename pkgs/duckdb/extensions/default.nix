@@ -104,10 +104,12 @@ let
       # linked in, as [ { reason; paths; } ]. Each needs a reason, because
       # skipping a test is giving up on it.
       testSkips ? [ ],
-      # Extensions the suite must load for this extension's tests. It loads only
-      # what a test names, while the product loads everything linked at startup,
-      # so a test that needs an extension this one depends on would otherwise fail.
-      testLoads ? [ ],
+      # Tests that need an extension loaded which the suite would not load by
+      # itself, as [ { reason; loads; tests; } ]. The suite loads only what a test
+      # names, while the product loads everything linked at startup. Preloading for
+      # the whole suite would break the tests that assert an extension is absent, so
+      # these run on their own, with `loads` loaded, and are left out of the main run.
+      testRuns ? [ ],
     }:
     let
       pin = pins.${name};
@@ -124,7 +126,7 @@ let
         dependencies
         linkable
         testSkips
-        testLoads
+        testRuns
         ;
       smoke = lib.mapNullable (
         s:
@@ -424,9 +426,16 @@ lib.mapAttrs mkExtension {
       openssl
     ];
     smoke = "SELECT CASE WHEN count(*) >= 1 THEN 1 ELSE error('quack_serve') END FROM duckdb_functions() WHERE function_name = 'quack_serve'";
-    # quack_serve needs the crypto module of httpfs, and the tests require only
-    # quack. In the product httpfs is loaded at startup like the rest.
-    testLoads = [ "httpfs" ];
+    testRuns = [
+      {
+        reason = "quack_serve needs the crypto module of httpfs, and these tests require only quack; in the product httpfs is loaded at startup like the rest";
+        loads = [ "httpfs" ];
+        tests = [
+          "test/sql/attach/external_resource_logging.test"
+          "test/sql/attach/external_resource_lifecycle.test"
+        ];
+      }
+    ];
   };
 
   spatial = {

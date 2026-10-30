@@ -3,6 +3,7 @@
   duckdb,
   fetchFromGitHub,
   writeText,
+  stdenv,
   callPackage,
 }:
 
@@ -71,7 +72,7 @@ let
         '') selected
       );
 
-      testLoads = lib.unique (lib.concatMap (ext: ext.testLoads) selected);
+      testRuns = lib.concatMap (ext: ext.testRuns) selected;
 
       # The Rust static libraries of the selected extensions. One keeps its copy
       # of Rust's standard library to itself; two or more would clash in the
@@ -92,26 +93,59 @@ let
       # The suite's own configuration, so a skipped test is listed with its
       # reason in the output instead of vanishing from a command line.
       testConfig = writeText "duckdb-test-config.json" (
-        builtins.toJSON (
-          {
-            description = "Settings for the packaged build";
-            skip_tests = [
-              {
-                reason = "installs an extension over HTTP and checks the response log, which needs network access";
-                paths = [ "test/sql/logging/http_response_log_redaction.test" ];
-              }
-            ]
-            ++ lib.concatMap (ext: ext.testSkips) selected;
-          }
-          // lib.optionalAttrs (testLoads != [ ]) {
-            # This replaces the suite's default set rather than adding to it,
-            # and core_functions is part of that default.
-            statically_loaded_extensions = [ "core_functions" ] ++ testLoads;
-          }
-        )
+        builtins.toJSON {
+          description = "Settings for the packaged build";
+          skip_tests = [
+            {
+              reason = "installs an extension over HTTP and checks the response log, which needs network access";
+              paths = [ "test/sql/logging/http_response_log_redaction.test" ];
+            }
+          ]
+          ++ lib.concatMap (ext: ext.testSkips) selected
+          # not skipped for good: they run below, with what they need loaded
+          ++ map (run: {
+            reason = "run on its own with ${lib.concatStringsSep ", " run.loads} loaded: ${run.reason}";
+            paths = run.tests;
+          }) testRuns;
+        }
       );
+
+      # Tests that need more loaded than the suite loads by itself run apart, so
+      # that the tests asserting an extension is absent still see it absent.
+      testRunCommands = lib.concatMapStrings (
+        run:
+        let
+          config = writeText "duckdb-test-config-${lib.concatStringsSep "-" run.loads}.json" (
+            builtins.toJSON {
+              description = "Tests that need ${lib.concatStringsSep ", " run.loads}: ${run.reason}";
+              # This replaces the suite's default set rather than adding to it,
+              # and core_functions is part of that default.
+              statically_loaded_extensions = [ "core_functions" ] ++ run.loads;
+            }
+          );
+        in
+        ''
+          HOME="$(mktemp -d)" DUCKDB_TEST_CONFIG=${config} ${libraryPathVariable}="$lib/lib" ./test/unittest ${lib.escapeShellArg (lib.concatStringsSep "," run.tests)}
+        ''
+      ) testRuns;
+      libraryPathVariable =
+        if stdenv.hostPlatform.isDarwin then "DYLD_LIBRARY_PATH" else "LD_LIBRARY_PATH";
+
       # where nixpkgs starts the suite, to give it the configuration
       testCommandPrefix = ''HOME="$(mktemp -d)" '';
+
+      # On x86_64 nixpkgs throws the runner's standard output away, to stay under
+      # Hydra's log limit. That is where it reports failures of its C++ tests, so
+      # such a failure showed up as an exit code and nothing else. Keep the output
+      # and print the failures if the suite fails.
+      testOutputDiscard = " >/dev/null";
+      testOutputKeep = ''
+         > "$TMPDIR/unittest.stdout" || {
+          status=$?
+          echo "The test runner exited with $status. Its standard output, which nixpkgs discards, reports failures of its C++ tests:" >&2
+          grep -B3 -A12 -E ': FAILED:' "$TMPDIR/unittest.stdout" | grep -v 'Replacing deprecated' | head -150 >&2
+          exit $status
+        }'';
     in
     lib.throwIf (unlinkable != [ ])
       "${
@@ -160,9 +194,11 @@ let
               assert lib.assertMsg (lib.hasInfix testCommandPrefix old.installCheckPhase)
                 "nixpkgs' duckdb no longer starts the test suite as expected, so the test configuration cannot be passed";
               builtins.replaceStrings
-                [ testCommandPrefix ]
+                [ testCommandPrefix testOutputDiscard ]
                 [
-                  "${testCommandPrefix}DUCKDB_TEST_CONFIG=${testConfig} "
+                  # the tests that need more loaded first (a few seconds), then the suite
+                  "${testRunCommands}${testCommandPrefix}DUCKDB_TEST_CONFIG=${testConfig} "
+                  testOutputKeep
                 ]
                 old.installCheckPhase;
 
