@@ -60,7 +60,6 @@ let
               ext.include != null
             ) ''INCLUDE_DIR "''${PROJECT_SOURCE_DIR}/extension_external/${ext.name}/${ext.include}"''}
             EXTENSION_VERSION "${builtins.substring 0 10 ext.rev}")
-          duckdb_extension_statically_link(${ext.name})
         '') selected
       );
     in
@@ -89,10 +88,20 @@ let
                 (lib.cmakeFeature "BUILD_EXTENSIONS" (lib.concatStringsSep ";" inTreeExtensions))
                 # link the extensions as well as build them
                 (lib.cmakeBool "LINK_CORE_EXTENSIONS" true)
+                # Without local_extension_repository, which would point INSTALL
+                # at a repository in the build directory that is gone at runtime.
+                (lib.cmakeFeature "DUCKDB_CAPABILITIES" "httplib;loadable_extensions")
               ]
-              ++ lib.optional (selected != [ ]) (
-                lib.cmakeFeature "DUCKDB_EXTENSION_CONFIGS" "${extensionConfig}"
-              );
+              ++ lib.optionals (selected != [ ]) [
+                (lib.cmakeFeature "DUCKDB_EXTENSION_CONFIGS" "${extensionConfig}")
+                # The order here is the order DuckDB registers them in, and an
+                # extension that needs parquet or json fails to load if they
+                # come later. So the in-tree ones first, then ours with their
+                # dependencies ahead of them.
+                (lib.cmakeFeature "STATICALLY_LINK_EXTENSIONS" (
+                  lib.concatStringsSep ";" (inTreeExtensions ++ map (ext: ext.name) selected)
+                ))
+              ];
 
             # doInstallCheck stays as nixpkgs sets it, so DuckDB's own test suite runs.
 
@@ -115,6 +124,17 @@ let
                 cp -R ${ext.source} extension_external/${ext.name}
                 chmod -R u+w extension_external/${ext.name}
               '') selected}
+            '';
+
+            # CMake only notes "requested but not built" for an extension that
+            # has no static library, then carries on without it. Fail instead.
+            preInstall = (old.preInstall or "") + ''
+              for ext in ${lib.escapeShellArgs (map (ext: ext.name) selected)}; do
+                if [ ! -e "extension/$ext/lib''${ext}_extension.a" ]; then
+                  echo "extension $ext was requested but not built (no static library)" >&2
+                  exit 1
+                fi
+              done
             '';
           }
         )

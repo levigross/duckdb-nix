@@ -34,6 +34,14 @@
         pkgs:
         let
           all = pkgs.duckdb.withExtensions (_: linkable pkgs);
+          # the same build without its test suite, for iterating
+          devBuild = all.overrideAttrs {
+            doInstallCheck = false;
+            ninjaFlags = [
+              "-k"
+              "0"
+            ];
+          };
         in
         {
           default = pkgs.duckdb;
@@ -51,12 +59,12 @@
             doInstallCheck = false;
             installPhase = "touch $out";
           };
-          dev-keep-going = all.overrideAttrs {
-            doInstallCheck = false;
-            ninjaFlags = [
-              "-k"
-              "0"
-            ];
+          dev-keep-going = devBuild;
+          # the checks/all-extensions check, against the build without tests
+          dev-check = import ./all-extensions-check.nix {
+            inherit pkgs;
+            duckdb = devBuild;
+            extensions = linkable pkgs;
           };
         }
         # the prepared source of each extension, to test patches without building DuckDB

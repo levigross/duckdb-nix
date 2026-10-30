@@ -7,7 +7,6 @@ let
 
   linkable = lib.filter (ext: ext.linkable) (lib.attrValues duckdb.extensions);
   withAll = duckdb.withExtensions (_: linkable);
-  names = lib.concatMapStringsSep ", " (ext: "'${ext.name}'") linkable;
 in
 {
   # Every extension must be the commit the DuckDB release pins.
@@ -74,28 +73,9 @@ in
     touch $out
   '';
 
-  # Every linkable extension is loaded without INSTALL or LOAD, and the ones
-  # with a smoke test pass it.
-  all-extensions =
-    let
-      smoke = ext: ''
-        echo "smoke: ${ext.name}"
-        ${lib.getExe withAll} -bail -c ${lib.escapeShellArg ext.smoke} >/dev/null
-      '';
-    in
-    pkgs.runCommand "duckdb-all-extensions-check" { } ''
-      export HOME=$TMPDIR
-      duckdb=${lib.getExe withAll}
-
-      not_loaded=$($duckdb -noheader -list -c \
-        "SELECT extension_name FROM duckdb_extensions() WHERE extension_name IN (${names}) AND NOT loaded ORDER BY 1")
-      [ -z "$not_loaded" ] || { echo "not loaded: $not_loaded" >&2; exit 1; }
-
-      loaded=$($duckdb -noheader -list -c \
-        "SELECT count(*) FROM duckdb_extensions() WHERE extension_name IN (${names}) AND loaded")
-      [ "$loaded" = ${toString (lib.length linkable)} ] || { echo "expected ${toString (lib.length linkable)} loaded, got $loaded" >&2; exit 1; }
-
-      ${lib.concatMapStrings smoke (lib.filter (ext: ext.smoke != null) linkable)}
-      touch $out
-    '';
+  all-extensions = import ./all-extensions-check.nix {
+    inherit pkgs;
+    duckdb = withAll;
+    extensions = linkable;
+  };
 }
