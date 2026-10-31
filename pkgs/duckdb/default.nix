@@ -90,44 +90,68 @@ let
         else
           lib.genAttrs (map (ext: ext.name) withRust) (name: rustArchive available.${name});
 
-      # The suite's own configuration, so a skipped test is listed with its
-      # reason in the output instead of vanishing from a command line.
+      # What the main pass does not run, and why. `paths` are SQL test scripts,
+      # which the suite's own configuration can skip; `names` are C++ test cases,
+      # which only its command line can exclude.
+      testSkips = [
+        {
+          reason = "installs an extension over HTTP and checks the response log, which needs network access";
+          paths = [ "test/sql/logging/http_response_log_redaction.test" ];
+        }
+      ]
+      ++ lib.concatMap (ext: ext.testSkips) selected
+      # not given up on: each of these runs below, apart
+      ++ map (run: {
+        reason = "run on its own${
+          lib.optionalString (run.loads != [ ]) " with ${lib.concatStringsSep ", " run.loads} loaded"
+        }: ${run.reason}";
+        paths = run.tests;
+      }) testRuns;
+
       testConfig = writeText "duckdb-test-config.json" (
         builtins.toJSON {
           description = "Settings for the packaged build";
-          skip_tests = [
-            {
-              reason = "installs an extension over HTTP and checks the response log, which needs network access";
-              paths = [ "test/sql/logging/http_response_log_redaction.test" ];
-            }
-          ]
-          ++ lib.concatMap (ext: ext.testSkips) selected
-          # not skipped for good: they run below, with what they need loaded
-          ++ map (run: {
-            reason = "run on its own with ${lib.concatStringsSep ", " run.loads} loaded: ${run.reason}";
-            paths = run.tests;
-          }) testRuns;
+          skip_tests = map (skip: { inherit (skip) reason paths; }) (
+            lib.filter (skip: skip ? paths) testSkips
+          );
         }
       );
 
-      # Tests that need more loaded than the suite loads by itself run apart, so
-      # that the tests asserting an extension is absent still see it absent.
-      testRunCommands = lib.concatMapStrings (
-        run:
-        let
-          config = writeText "duckdb-test-config-${lib.concatStringsSep "-" run.loads}.json" (
-            builtins.toJSON {
-              description = "Tests that need ${lib.concatStringsSep ", " run.loads}: ${run.reason}";
-              # This replaces the suite's default set rather than adding to it,
-              # and core_functions is part of that default.
-              statically_loaded_extensions = [ "core_functions" ] ++ run.loads;
-            }
-          );
-        in
-        ''
-          HOME="$(mktemp -d)" DUCKDB_TEST_CONFIG=${config} ${libraryPathVariable}="$lib/lib" ./test/unittest ${lib.escapeShellArg (lib.concatStringsSep "," run.tests)}
-        ''
-      ) testRuns;
+      # the C++ test cases left out of the main pass
+      testExcludes = lib.concatMapStrings (name: "exclude:${lib.escapeShellArg name} ") (
+        lib.concatMap (skip: skip.names or [ ]) testSkips
+      );
+
+      # nothing is left out silently: the build log says what and why
+      testNotes = lib.concatMapStrings (
+        skip:
+        lib.concatMapStrings (
+          item: "echo ${lib.escapeShellArg "not run in the main pass: ${item}: ${skip.reason}"}\n"
+        ) ((skip.paths or [ ]) ++ (skip.names or [ ]))
+      ) testSkips;
+
+      # Tests that need something different from the main pass run apart: more
+      # loaded than the suite loads by itself, or a process of their own. That keeps
+      # the tests that assert an extension is absent seeing it absent, and the ones
+      # that disturb each other apart.
+      testRunCommands = lib.concatStrings (
+        lib.imap0 (
+          i: run:
+          let
+            config = writeText "duckdb-test-config-run${toString i}.json" (
+              builtins.toJSON {
+                description = "${run.reason}";
+                # This replaces the suite's default set rather than adding to it,
+                # and core_functions is part of that default.
+                statically_loaded_extensions = [ "core_functions" ] ++ run.loads;
+              }
+            );
+          in
+          ''
+            HOME="$(mktemp -d)" DUCKDB_TEST_CONFIG=${config} ${libraryPathVariable}="$lib/lib" ./test/unittest ${lib.escapeShellArg (lib.concatStringsSep "," run.tests)}
+          ''
+        ) testRuns
+      );
       libraryPathVariable =
         if stdenv.hostPlatform.isDarwin then "DYLD_LIBRARY_PATH" else "LD_LIBRARY_PATH";
 
@@ -194,11 +218,12 @@ let
               assert lib.assertMsg (lib.hasInfix testCommandPrefix old.installCheckPhase)
                 "nixpkgs' duckdb no longer starts the test suite as expected, so the test configuration cannot be passed";
               builtins.replaceStrings
-                [ testCommandPrefix testOutputDiscard ]
+                [ testCommandPrefix testOutputDiscard "./test/unittest " ]
                 [
-                  # the tests that need more loaded first (a few seconds), then the suite
-                  "${testRunCommands}${testCommandPrefix}DUCKDB_TEST_CONFIG=${testConfig} "
+                  # what is left out, the tests that run apart (a few seconds), then the suite
+                  "${testNotes}${testRunCommands}${testCommandPrefix}DUCKDB_TEST_CONFIG=${testConfig} "
                   testOutputKeep
+                  "./test/unittest ${testExcludes}"
                 ]
                 old.installCheckPhase;
 

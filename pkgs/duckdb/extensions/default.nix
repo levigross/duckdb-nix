@@ -101,7 +101,8 @@ let
       # text the SQL must fail with }, for clients that need a server.
       smoke ? null,
       # Tests of DuckDB's own suite that cannot pass once this extension is
-      # linked in, as [ { reason; paths; } ]. Each needs a reason, because
+      # linked in, as [ { reason; paths; } ] for SQL test scripts or
+      # [ { reason; names; } ] for C++ test cases. Each needs a reason, because
       # skipping a test is giving up on it.
       testSkips ? [ ],
       # Tests that need an extension loaded which the suite would not load by
@@ -398,6 +399,36 @@ lib.mapAttrs mkExtension {
       libpq
       openssl
     ];
+    testSkips = [
+      {
+        reason = "runs a LogicalPlanStatement, which cannot be copied, and the core copies a statement whenever a client state asks to be able to rebind, as this extension's does. They pass without postgres_scanner loaded. The only use of the statement outside tests is a developer tool";
+        names = [
+          "Table function registration retains canonical qualification"
+          "Aliased table function overloads retain catalog identity"
+          "Current list serialization preserves bound ordering across repeated copies"
+          "Secure-view caller predicates retain source positions across pruning and serialization"
+          "Nested function qualification survives plan copies"
+          "Test executing an optimized plan with a flipped delim join"
+          # test/sql_export: each builds its plan as a LogicalPlanStatement
+          "Logical plan SQL export copies owned chunk data and selected columns"
+          "Owned chunk export preserves observable execution groups"
+          "Owned chunk SQL export retains delivered rows before conversion errors"
+          "Owned chunk SQL export requires an explicit consumer evaluation contract"
+          "Owned chunk SQL export accounts for intrinsic SINGLE join errors"
+          "Owned chunk SQL export preserves selected rows after a cross product"
+          "Logical plan SQL export preserves partial CTE streams and errors"
+          "Logical plan SQL export rejects recursive wrappers when inlining is unavailable"
+          "Logical plan SQL export preserves join output maps and empty sides"
+          "Logical plan SQL export validates noncanonical PIVOT defaults and list sources"
+          "Logical plan SQL export preserves empty filter projection maps"
+          "Table row number SQL export guards filtered numbering"
+          "Table SQL export distinguishes pruning hints from row filters"
+          "Logical plan SQL export checks consumers of multirow VALUES"
+          "Logical plan SQL export verifies unordered VALUES list canonicalizers"
+          "Logical plan SQL export rejects a throwing later VALUES row below LIMIT"
+        ];
+      }
+    ];
     postPatch = ''
       # Both helpers are only used in their own file. Upstream builds the
       # extension on its own, but linked in beside unity_catalog they collide.
@@ -435,10 +466,21 @@ lib.mapAttrs mkExtension {
           "test/sql/attach/external_resource_lifecycle.test"
         ];
       }
+      {
+        reason = "it passes alone, and fails after test/sql/catalog/comment_on_column_remote_catalog.test in one process, which also uses quack and the same port, when any of lance, mysql_scanner, postgres_scanner, spatial, unity_catalog or vortex is linked; a separate process per test is how such tests run elsewhere";
+        loads = [ ];
+        tests = [ "test/sql/connect/connect_passthrough_quack.test" ];
+      }
     ];
   };
 
   spatial = {
+    testSkips = [
+      {
+        reason = "expects EPSG:4326 to be an unknown coordinate system, which spatial's coordinate system database makes known";
+        names = [ "V2: GEOMETRY with an unknown coordinate system" ];
+      }
+    ];
     buildInputs = [
       curl
       expat

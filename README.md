@@ -1,28 +1,107 @@
 # DuckDB with extensions, for Nix
 
-DuckDB extensions linked into DuckDB itself, so the CLI, Python and Rust all
-get them without `INSTALL`, signature checks or an extension directory.
+DuckDB's extensions linked into DuckDB itself, so the CLI, `libduckdb` and its
+users get them with no `INSTALL`, no signature check and no extension directory.
 
-Status: prototype. Only `httpfs` on glibc, DuckDB 2.0.0.
+nixpkgs' `duckdb` builds only the extensions in DuckDB's own tree. Everything else
+(`httpfs`, `spatial`, `iceberg`, ...) has to be downloaded at runtime as a signed
+binary, which does not suit Nix, a sandbox, or a library that is linked rather than run.
+
+Status: DuckDB 2.0.0, x86_64-linux with glibc. 23 of the 24 out-of-tree extensions
+link and pass their checks. See [Not done](#not-done).
 
 ```nix
-duckdb.withExtensions (e: [ e.httpfs ])
+duckdb.withExtensions (e: [ e.httpfs e.spatial ])
 ```
 
 ```sh
-nix build .#duckdb-httpfs
+nix build .#duckdb-all        # all 23
+nix build .#duckdb-httpfs     # one
+nix build .#duckdb            # none: DuckDB 2.0.0 as nixpkgs would build it
 nix flake check
 ```
 
-## Layout
+## The extensions
 
-- `pkgs/duckdb/` overrides nixpkgs' `duckdb` to 2.0.0 and links the selected extensions in.
-- `pkgs/duckdb/extensions/` extension definitions. `pins.json` holds the commits
-  the DuckDB release pins in `.github/config/extensions/`; `checks.nix` fails if they drift.
-- `checks.nix` proves an extension works (httpfs reads a CSV over HTTP, and the same
-  query fails without it).
+| | |
+|---|---|
+| no dependencies | encodings, fts, inet, legacy_parser, sqlsmith, sqlite_scanner, vss |
+| system libraries | httpfs, quack, excel, aws, glue, azure, ducklake, iceberg, avro, unity_catalog, postgres_scanner, mysql_scanner, spatial |
+| Rust | lance, delta, vortex |
+| cannot be linked | odbc_scanner (a C API extension, loadable at runtime only) |
 
-## Not done yet
+Each is the commit the DuckDB release pins in `.github/config/extensions/`. Asking
+for one that needs another gets it too (`iceberg` brings `avro` and `httpfs`).
 
-Python (`python3Packages.duckdb` builds its own DuckDB), Rust (`DUCKDB_LIB_DIR`),
-the other extensions, and fully static (`pkgsStatic`) builds.
+## How it works
+
+- `scripts/update.sh [tag]` computes every pin from an upstream release: DuckDB's
+  commit and hash, each extension's commit and hash, the submodules they need, the
+  Rust lock files and the hashes of their git dependencies. Nothing is copied from
+  another repository.
+- Each extension's source is its own small derivation (`source-<name>`): the pin,
+  its submodules, DuckDB's own patches for it and ours. A patch that stops applying
+  fails in seconds, not after a DuckDB build.
+- `pkgs/duckdb` overrides nixpkgs' `duckdb` and links the selection. The link order
+  is the load order, so the in-tree extensions come first and dependencies before
+  their users.
+- The build without extensions keeps the same derivation as nixpkgs' would, so it
+  is not rebuilt when this machinery changes.
+
+### The Rust extensions
+
+lance, delta and vortex build their Rust half by running cargo from CMake, which
+needs the network. Here it is a separate derivation (`rust-<name>`) built with
+[crane](https://github.com/ipetkov/crane) from a vendored `Cargo.lock`.
+
+- They use the official 1.99.1 toolchain from `rust-overlay`. nixpkgs' `rustc` is
+  linked against LLVM 21 while its standard library declares AVX-512 intrinsics for
+  LLVM 22, and `lance-linalg` does not compile with it.
+- Several Rust static libraries cannot be linked together, since each carries its
+  own `std`. The symbols more than one defines are renamed per library
+  (`pkgs/duckdb/isolate-rust.nix`), which gives each a private `std` as a loadable
+  extension would have.
+- vortex needed more: the `Cargo.lock` upstream commits disagrees with its own
+  `Cargo.toml` (the update script re-resolves it), crane's vendored copy of a git
+  crate lacks files the build script wants, and the build script regenerates a
+  header with a tool that needs the monorepo layout. It uses the committed header,
+  which upstream regenerates on every build; the smoke test is there to catch it lagging.
+
+## Checks
+
+| | |
+|---|---|
+| `extension-pins` | every extension is the commit the release pins |
+| `httpfs` | reads a CSV over HTTP; the same query fails on plain DuckDB |
+| `all-extensions` | every extension is loaded without `INSTALL`, and each passes an offline smoke test (real round trips for vortex, lance and delta; a failed connection from libpq and MariaDB) |
+| `rust-consumer` | a Rust program using the `duckdb` crate, linked against `libduckdb`, finds the extensions; the same binary against plain DuckDB does not |
+
+Counting what is loaded is the check that matters. CMake carries on without an
+extension it could not build, and says so in a line that is easy to miss.
+
+DuckDB's own test suite runs in `installCheckPhase`, as in nixpkgs. Some tests cannot
+pass in this build, and each is listed with its reason in the build log (and in
+`pkgs/duckdb/extensions/default.nix`): tests that need the network, tests that assert
+an extension is absent, and C++ tests that cannot run with `postgres_scanner` or
+`spatial` loaded. Tests that need something different run in their own invocation instead.
+
+## Developing
+
+- `dev-keep-going` builds everything without the test suite; `dev-check` and
+  `dev-rust-check` run the checks against it; `dev-configure` stops after CMake.
+- For tests, build `unittest` once in a directory you keep (`nix develop .#duckdb-all`,
+  then unpack, patch, configure and `ninja test/unittest`), and rerun single tests
+  or relink with a subset of the extensions in a minute. That is how the test
+  failures were attributed to individual extensions.
+- Flakes see only tracked files; stage new ones.
+
+## Not done
+
+- Python. `python3Packages.duckdb` builds its own copy of DuckDB and needs the same
+  extension list. nixpkgs' module is written for pybind11 and a custom build
+  backend, and duckdb-python 2.0.0 uses nanobind, so it needs a port.
+- Fully static (`pkgsStatic`, musl) builds.
+- Other platforms. Only x86_64-linux has been built; aarch64-linux and
+  aarch64-darwin are untried, and the nixpkgs 26.05 branch has only been evaluated.
+- Size: `libduckdb.so` with all 23 is 874 MB, mostly lance's DataFusion stack. Link
+  only what you use.
