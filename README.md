@@ -7,7 +7,7 @@ nixpkgs' `duckdb` builds only the extensions in DuckDB's own tree. Everything el
 (`httpfs`, `spatial`, `iceberg`, ...) has to be downloaded at runtime as a signed
 binary, which does not suit Nix, a sandbox, or a library that is linked rather than run.
 
-Status: DuckDB 2.0.0, x86_64-linux with glibc. 23 of the 24 out-of-tree extensions
+Status: DuckDB 2.0.0, x86_64-linux with glibc. 24 of the 25 out-of-tree extensions
 link and pass their checks on nixpkgs unstable, and most of them on the two latest
 stable releases (see [nixpkgs versions](#nixpkgs-versions)). See also
 [Not done](#not-done).
@@ -17,7 +17,7 @@ duckdb.withExtensions (e: [ e.httpfs e.spatial ])
 ```
 
 ```sh
-nix build .#duckdb-all        # all 23
+nix build .#duckdb-all        # all 24
 nix build .#duckdb-httpfs     # one
 nix build .#duckdb            # none: DuckDB 2.0.0 as nixpkgs would build it
 nix build .#stable-duckdb-all    # all it can, on the current stable nixpkgs (26.05)
@@ -33,9 +33,9 @@ the overlay works on whichever nixpkgs you apply it to.
 
 | nixpkgs | extensions in `duckdb-all` | not available |
 |---|---|---|
-| unstable | 23 | |
-| 26.05 | 22 | spatial: its sources need GDAL 3.13, nixpkgs has 3.12 |
-| 25.11 | 21 | spatial (GDAL 3.11), azure (nixpkgs has no Azure SDK) |
+| unstable | 24 | |
+| 26.05 | 23 | spatial: its sources need GDAL 3.13, nixpkgs has 3.12 |
+| 25.11 | 22 | spatial (GDAL 3.11), azure (nixpkgs has no Azure SDK) |
 
 An extension that a nixpkgs cannot build says why when you ask for it, and is left
 out of `duckdb-all` and the checks. Nothing is backported; the answer is a newer nixpkgs.
@@ -44,13 +44,17 @@ out of `duckdb-all` and the checks. Nothing is backported; the answer is a newer
 
 | | |
 |---|---|
-| no dependencies | encodings, fts, inet, legacy_parser, sqlsmith, sqlite_scanner, vss |
+| no dependencies | encodings, fts, inet, legacy_parser, sqlsmith, sqlite_scanner, vss, duckpgq |
 | system libraries | httpfs, quack, excel, aws, glue, azure, ducklake, iceberg, avro, unity_catalog, postgres_scanner, mysql_scanner, spatial |
 | Rust | lance, delta, vortex |
 | cannot be linked | odbc_scanner (a C API extension, loadable at runtime only) |
 
-Each is the commit the DuckDB release pins in `.github/config/extensions/`. Asking
-for one that needs another gets it too (`iceberg` brings `avro` and `httpfs`).
+Each is the commit the DuckDB release pins in `.github/config/extensions/`. The
+exception is duckpgq (SQL/PGQ graph queries), a community extension: its commit is
+the one the `duckdb/community-extensions` descriptor names, and the update script
+refuses it unless the DuckDB it was developed against is this release. From DuckDB 2.0
+its syntax is switched on with `SET active_grammar_extensions = ['duckpgq']`.
+Asking for an extension that needs another gets it too (`iceberg` brings `avro` and `httpfs`).
 
 ## How it works
 

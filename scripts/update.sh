@@ -5,7 +5,8 @@
 #   pkgs/duckdb/versions.json            DuckDB itself: version, commit, hash
 #   pkgs/duckdb/extensions/pins.json     each extension (and the submodules it
 #                                        needs) at the commit that release pins
-#                                        in .github/config/extensions/*.cmake
+#                                        in .github/config/extensions/*.cmake,
+#                                        and the community ones named below
 #
 #   scripts/update.sh [tag]     # default: the latest DuckDB release
 #
@@ -82,6 +83,31 @@ export tag work
 gh api "repos/duckdb/duckdb/contents/.github/config/extensions?ref=$tag" --jq '.[].name' |
   grep -v '^test-utils' |
   xargs -P 8 -I{} bash -c 'pin_one {}'
+
+# Community extensions are not in DuckDB's own config. Their descriptors in
+# duckdb/community-extensions name the commit to build. DuckDB's own pins are
+# for exactly this release; a community one is only known to fit it if the
+# DuckDB it was developed against, which is a submodule, is this release.
+community=(duckpgq)
+community_rev="$(gh api repos/duckdb/community-extensions/commits/main --jq .sha)"
+duckdb_rev="$(jq -r .rev "$versions")"
+for name in "${community[@]}"; do
+  descriptor="https://raw.githubusercontent.com/duckdb/community-extensions/$community_rev/extensions/$name/description.yml"
+  repo="$(curl -fsSL "$descriptor" | awk '/^repo:/ {in_repo = 1; next} in_repo && $1 == "github:" {print $2; exit}')"
+  sha="$(curl -fsSL "$descriptor" | awk '/^repo:/ {in_repo = 1; next} in_repo && $1 == "ref:" {print $2; exit}')"
+  [ -n "$repo" ] && [ -n "$sha" ] || { echo "$name: no repository and ref in $descriptor" >&2; exit 1; }
+  built_with="$(gh api "repos/$repo/git/trees/$sha" --jq '.tree[] | select(.path == "duckdb") | .sha')"
+  if [ "$built_with" != "$duckdb_rev" ]; then
+    echo "$name: $repo@${sha:0:10} is developed against DuckDB ${built_with:0:10}, not $tag (${duckdb_rev:0:10})" >&2
+    exit 1
+  fi
+  jq -n --arg name "$name" --arg o "${repo%%/*}" --arg r "${repo##*/}" --arg rev "$sha" \
+    --arg hash "$(prefetch "$repo" "$sha")" --arg crev "$community_rev" \
+    --arg dhash "$(nix store prefetch-file --json "$descriptor" | jq -r .hash)" \
+    '{($name): {owner: $o, repo: $r, rev: $rev, hash: $hash, patches: false,
+                community: {rev: $crev, descriptorHash: $dhash}}}' >"$work/$name.json"
+  echo "pinned $name (community)" >&2
+done
 
 # The delta extension clones delta-kernel-rs and builds it with cargo. Pin the
 # repository and tag its own CMake names, so Nix can build it instead.

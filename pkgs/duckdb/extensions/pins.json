@@ -48,6 +48,17 @@
     "repo": "ducklake",
     "rev": "417a9117f590e8141742ac0579d02f6a90162e37"
   },
+  "duckpgq": {
+    "community": {
+      "descriptorHash": "sha256-FXSvV/sbIfyBWcCRVo23bpe/CpGvK9GRLJLjo7M9WWE=",
+      "rev": "845779e73672b9d28420b5a1268df7bf247a0b9d"
+    },
+    "hash": "sha256-4LLNX1p+6XzdfVKDonyT/nhMZNwcH+UzuQ8AdFn9zZU=",
+    "owner": "cwida",
+    "patches": false,
+    "repo": "duckpgq-extension",
+    "rev": "9c11bc192a071c9e44cef16cced90a22d7d7db2c"
+  },
   "encodings": {
     "hash": "sha256-EF2lbkvQwXjl79VdIlzvsVsxq3VvujGHZO1ELmiA7P4=",
     "owner": "duckdb",

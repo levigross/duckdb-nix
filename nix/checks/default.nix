@@ -9,39 +9,7 @@ let
   withAll = duckdb.withExtensions (_: linkable);
 in
 {
-  # Every extension must be the commit the DuckDB release pins.
-  extension-pins =
-    let
-      checkPin = ext: ''
-        check ${
-          lib.escapeShellArgs [
-            ext.name
-            "https://github.com/${ext.owner}/${ext.repo}"
-            ext.rev
-          ]
-        }
-      '';
-    in
-    pkgs.runCommand "duckdb-extension-pins" { } ''
-      status=0
-      check() {
-        config=${duckdb.src}/.github/config/extensions/$1.cmake
-        if [ ! -f "$config" ]; then
-          echo "$1: duckdb ${duckdb.version} has no $config" >&2
-          status=1
-          return
-        fi
-        url=$(awk '$1 == "GIT_URL" { print $2; exit }' "$config")
-        tag=$(awk '$1 == "GIT_TAG" { print $2; exit }' "$config")
-        if [ "$url" != "$2" ] || [ "$tag" != "$3" ]; then
-          echo "$1: duckdb ${duckdb.version} pins $url@$tag, packaged $2@$3" >&2
-          status=1
-        fi
-      }
-      ${lib.concatMapStrings checkPin (lib.attrValues duckdb.extensions)}
-      [ "$status" -eq 0 ]
-      touch $out
-    '';
+  extension-pins = import ./extension-pins.nix { inherit pkgs; };
 
   # Reads a CSV over HTTP, which needs httpfs. The same query must fail
   # without it, so the check cannot pass by accident.

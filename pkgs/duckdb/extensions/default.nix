@@ -105,7 +105,10 @@ let
       postPatch ? "",
       # What must work offline in a build containing the extension. Either SQL
       # that must succeed, or { sql; setup ? shell to run first; expectError ?
-      # text the SQL must fail with }, for clients that need a server.
+      # text the SQL must fail with }, for clients that need a server. `sql` can
+      # be a list, each run as a command of its own: DuckDB parses a whole command
+      # before running any of it, so a statement that changes the syntax has to
+      # come in an earlier one.
       smoke ? null,
       # Tests of DuckDB's own suite that cannot pass once this extension is
       # linked in, as [ { reason; paths; } ] for SQL test scripts or
@@ -147,6 +150,8 @@ let
       ) smoke;
       inherit (pin) owner repo rev;
       include = pin.include or null;
+      # in duckdb/community-extensions rather than in DuckDB's own configuration
+      community = pin.community or null;
 
       # The pinned source with its submodules, DuckDB's patches for it and
       # ours applied. A separate derivation, so a patch that no longer applies
@@ -276,6 +281,27 @@ lib.mapAttrs mkExtension {
       SELECT CASE WHEN sum(i) = 6 THEN 1 ELSE error('ducklake') END FROM dl.t;
     '';
   };
+
+  # a community extension: SQL/PGQ graph queries. It is a grammar, so it has to be
+  # switched on (from DuckDB 2.0) before the syntax is understood.
+  duckpgq.smoke.sql = [
+    "SET active_grammar_extensions = ['duckpgq']"
+    ''
+      CREATE TABLE person AS SELECT * FROM (VALUES (1), (2), (3)) t(id);
+      CREATE TABLE knows AS SELECT * FROM (VALUES (1, 2), (2, 3)) t(a, b);
+      CREATE PROPERTY GRAPH g
+        VERTEX TABLES (person)
+        EDGE TABLES (knows SOURCE KEY (a) REFERENCES person (id) DESTINATION KEY (b) REFERENCES person (id) LABEL knows)
+    ''
+    ''
+      SELECT CASE WHEN count(*) = 2 THEN 1 ELSE error('graph match') END
+        FROM GRAPH_TABLE (g MATCH (x:person)-[k:knows]->(y:person) COLUMNS (x.id AS a, y.id AS b))
+    ''
+    ''
+      SELECT CASE WHEN max(hops) = 2 THEN 1 ELSE error('shortest path') END
+        FROM GRAPH_TABLE (g MATCH p = ANY SHORTEST (x:person)-[k:knows]->{1,3}(y:person) COLUMNS (x.id AS a, y.id AS b, path_length(p) AS hops))
+    ''
+  ];
 
   # shift_jis is not built into DuckDB, only provided by this extension
   encodings.smoke = {

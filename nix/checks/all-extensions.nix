@@ -17,7 +17,8 @@ let
     ext:
     let
       s = ext.smoke;
-      run = "${lib.getExe duckdb} -no-agent -bail -c ${lib.escapeShellArg s.sql}";
+      commands = lib.concatMapStringsSep " " (sql: "-c ${lib.escapeShellArg sql}") (lib.toList s.sql);
+      run = "${lib.getExe duckdb} -no-agent -bail ${commands}";
     in
     ''
       echo "smoke: ${ext.name}"
