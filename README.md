@@ -130,3 +130,9 @@ an extension is absent, and C++ tests that cannot run with `postgres_scanner` or
   aarch64-darwin are untried.
 - Size: `libduckdb.so` with all 24 is 909 MB, mostly lance's DataFusion stack. Link
   only what you use.
+
+## License
+
+[Apache-2.0](LICENSE) for the Nix code and scripts in this repository. DuckDB, the
+extensions and the Rust crates it builds are not part of it and keep their own
+licenses.
