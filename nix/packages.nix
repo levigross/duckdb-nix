@@ -23,11 +23,18 @@ _:
               "0"
             ];
           };
+
+          # DuckDB with one extension (and what it needs), for each this nixpkgs can link
+          withOne = lib.listToAttrs (
+            map (
+              ext: lib.nameValuePair "duckdb-${ext.name}" (duckdb.withExtensions (e: [ e.${ext.name} ]))
+            ) duckdb.linkableExtensions
+          );
         in
-        {
+        withOne
+        // {
           default = duckdb;
           inherit duckdb;
-          duckdb-httpfs = duckdb.withExtensions (e: [ e.httpfs ]);
           duckdb-all = all;
 
           # Development only, for finding build errors quickly, so they skip the

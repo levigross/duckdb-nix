@@ -31,6 +31,7 @@
 
       imports = [
         ./nix/overlay.nix
+        ./nix/lib.nix
         ./nix/nixpkgs.nix
         ./nix/packages.nix
         ./nix/devshell.nix

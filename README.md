@@ -12,18 +12,37 @@ link and pass their checks on nixpkgs unstable, and most of them on the two late
 stable releases (see [nixpkgs versions](#nixpkgs-versions)). See also
 [Not done](#not-done).
 
+## Using it
+
+One extension, ready made. There is a package for each (`nix flake show` lists them):
+
+```sh
+nix run github:levigross/duckdb-nix#duckdb-spatial
+nix build github:levigross/duckdb-nix#duckdb-all    # all 24
+nix build github:levigross/duckdb-nix#duckdb        # none: DuckDB 2.0.0 as nixpkgs would build it
+```
+
+Any selection, built with your own nixpkgs and no overlay:
+
 ```nix
+let
+  duckdb = duckdb-nix.lib.duckdb pkgs;
+in
 duckdb.withExtensions (e: [ e.httpfs e.spatial ])
 ```
 
-```sh
-nix build .#duckdb-all        # all 24
-nix build .#duckdb-httpfs     # one
-nix build .#duckdb            # none: DuckDB 2.0.0 as nixpkgs would build it
-nix build .#stable-duckdb-all    # all it can, on the current stable nixpkgs (26.05)
-nix build .#previous-duckdb-all  # and on the one before (25.11)
-nix flake check
+Building with your nixpkgs matters when something links `libduckdb`: a program built
+with one glibc cannot load a library built with a newer one. If you would rather have
+`pkgs.duckdb` itself change, apply the overlay and write `pkgs.duckdb.withExtensions`
+the same way:
+
+```nix
+import nixpkgs { inherit system; overlays = [ duckdb-nix.overlays.default ]; }
 ```
+
+For 26.05 and 25.11 the packages carry a prefix: `#stable-duckdb-spatial`,
+`#previous-duckdb-all`. An extension that a nixpkgs cannot build has no package there.
+
 
 ## nixpkgs versions
 
