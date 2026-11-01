@@ -163,8 +163,14 @@ relock_vortex() {
 relock_vortex
 
 # Some of vortex's Rust dependencies come from git. Nix wants a hash for each
-# `source` string in the lock, of the checkout as fetchgit makes it (no submodules,
-# no LFS). One prefetch per repository and commit, shared by every crate from it.
+# `source` string in the lock, of the checkout as fetchgit makes it: with submodules
+# (its default) and without LFS. One prefetch per repository and commit, shared by
+# every crate from it.
+#
+# Prefetching also puts the checkout in the store, at the path its hash names. A hash
+# computed with options that differ from fetchgit's therefore builds on this machine,
+# since nothing is fetched, and fails everywhere else. Check a change with
+# `nix build .#rust-vortex.cargoDeps --rebuild`, or let CI do it on a clean store.
 git_hashes() { # Cargo.lock -> JSON object of lock source string to hash
   local lock="$1" source url rev key json='{}'
   declare -A hashes=()
@@ -175,7 +181,7 @@ git_hashes() { # Cargo.lock -> JSON object of lock source string to hash
     rev="${source##*#}"
     key="$url $rev"
     if [ -z "${hashes[$key]:-}" ]; then
-      hashes[$key]="$(nix run nixpkgs#nix-prefetch-git -- --quiet --url "$url" --rev "$rev" | jq -r .hash)"
+      hashes[$key]="$(nix run nixpkgs#nix-prefetch-git -- --quiet --fetch-submodules --url "$url" --rev "$rev" | jq -r .hash)"
       echo "prefetched $url @ ${rev:0:10}" >&2
     fi
     json="$(jq -c --arg s "$source" --arg h "${hashes[$key]}" '. + {($s): $h}' <<<"$json")"

@@ -208,7 +208,7 @@
   },
   "vortex": {
     "gitHashes": {
-      "git+https://github.com/geoarrow/geoarrow-rs?rev=855d2e138e54ce503c4488d5bb795ca1ea880d1f#855d2e138e54ce503c4488d5bb795ca1ea880d1f": "sha256-Y+zR0xn/Ih2gGmiP+iJpnERZ4DnwqHoTdchDPnYUfWo=",
+      "git+https://github.com/geoarrow/geoarrow-rs?rev=855d2e138e54ce503c4488d5bb795ca1ea880d1f#855d2e138e54ce503c4488d5bb795ca1ea880d1f": "sha256-ghYKj/hsc9NYLdVsunmLwO7z/aDxm8J2VYbE4kmLTww=",
       "git+https://github.com/vortex-data/vortex.git?rev=aa16807f39a1a1455ea5075c29ca5b7da3d4ee18#aa16807f39a1a1455ea5075c29ca5b7da3d4ee18": "sha256-EuJq5gVZOsjLljioCTwU9/1a+cJnlaGhJIvCMwaPsTg="
     },
     "hash": "sha256-yf4AO6msgukdjQuDp8u8z9j4+WPzLLRgXQHr8sGU7Uk=",
