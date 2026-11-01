@@ -3,6 +3,10 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # the overlay and the checks must also work with the current stable release
+    # and the one before it
+    nixpkgs-stable.url = "github:NixOS/nixpkgs/nixos-26.05";
+    nixpkgs-previous.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     # The Rust parts of some extensions build with the official toolchain, which
     # bundles the LLVM its standard library expects. nixpkgs' rustc 1.99 is
@@ -18,6 +22,8 @@
     {
       self,
       nixpkgs,
+      nixpkgs-stable,
+      nixpkgs-previous,
       crane,
       rust-overlay,
     }:
@@ -27,31 +33,29 @@
         "aarch64-linux"
         "aarch64-darwin"
       ];
-      forAllSystems =
-        f:
-        nixpkgs.lib.genAttrs systems (
-          system:
-          f (
-            import nixpkgs {
-              inherit system;
-              overlays = [ self.overlays.default ];
-            }
-          )
+      forAllSystems = nixpkgs.lib.genAttrs systems;
+      pkgsFor =
+        input: system:
+        import input {
+          inherit system;
+          overlays = [ self.overlays.default ];
+        };
+
+      # The same outputs from the older nixpkgs go beside the others, behind a prefix.
+      prefixed = prefix: nixpkgs.lib.mapAttrs' (name: nixpkgs.lib.nameValuePair "${prefix}${name}");
+      withOlder =
+        outputs: system:
+        outputs (pkgsFor nixpkgs system)
+        // prefixed "stable-" (outputs (pkgsFor nixpkgs-stable system))
+        // prefixed "previous-" (outputs (pkgsFor nixpkgs-previous system));
+
+      linkable =
+        pkgs:
+        pkgs.lib.filter (ext: ext.linkable && ext.unsupported == null) (
+          pkgs.lib.attrValues pkgs.duckdb.extensions
         );
 
-      linkable = pkgs: pkgs.lib.filter (ext: ext.linkable) (pkgs.lib.attrValues pkgs.duckdb.extensions);
-    in
-    {
-      overlays.default = nixpkgs.lib.composeManyExtensions [
-        rust-overlay.overlays.default
-        (final: prev: {
-          # 1.99.1 is the toolchain vortex pins; the others need less
-          duckdbCraneLib = (crane.mkLib final).overrideToolchain (p: p.rust-bin.stable."1.99.1".minimal);
-          duckdb = final.callPackage ./pkgs/duckdb { duckdb = prev.duckdb; };
-        })
-      ];
-
-      packages = forAllSystems (
+      builds =
         pkgs:
         let
           all = pkgs.duckdb.withExtensions (_: linkable pkgs);
@@ -99,19 +103,35 @@
             duckdb = devBuild;
             extensions = linkable pkgs;
           };
-        }
-        # the prepared source of each extension, to test patches without building DuckDB
-        // pkgs.lib.mapAttrs' (
+        };
+
+      # the prepared source of each extension, to test patches without building DuckDB,
+      # and the Rust part of the ones that have one, to build it on its own
+      parts =
+        pkgs:
+        pkgs.lib.mapAttrs' (
           name: ext: pkgs.lib.nameValuePair "source-${name}" ext.source
         ) pkgs.duckdb.extensions
-        # the Rust part of the extensions that have one, to build it on its own
         // pkgs.lib.mapAttrs' (name: ext: pkgs.lib.nameValuePair "rust-${name}" ext.rust.package) (
           pkgs.lib.filterAttrs (_: ext: ext.rust != null) pkgs.duckdb.extensions
-        )
-      );
+        );
+    in
+    {
+      overlays.default = nixpkgs.lib.composeManyExtensions [
+        rust-overlay.overlays.default
+        (final: prev: {
+          # 1.99.1 is the toolchain vortex pins; the others need less
+          duckdbCraneLib = (crane.mkLib final).overrideToolchain (p: p.rust-bin.stable."1.99.1".minimal);
+          duckdb = final.callPackage ./pkgs/duckdb { duckdb = prev.duckdb; };
+        })
+      ];
 
-      checks = forAllSystems (pkgs: import ./checks.nix { inherit pkgs; });
+      # The extensions are the same whichever nixpkgs builds them, so their parts
+      # are only listed once.
+      packages = forAllSystems (system: withOlder builds system // parts (pkgsFor nixpkgs system));
 
-      formatter = forAllSystems (pkgs: pkgs.nixfmt);
+      checks = forAllSystems (withOlder (pkgs: import ./checks.nix { inherit pkgs; }));
+
+      formatter = forAllSystems (system: (pkgsFor nixpkgs system).nixfmt);
     };
 }

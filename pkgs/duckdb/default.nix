@@ -58,6 +58,13 @@ let
       selected = withDependencies requested;
       unlinkable = lib.filter (ext: !ext.linkable) selected;
 
+      # what makes the selection impossible
+      problems =
+        map (ext: "${ext.name}: ${ext.unsupported}") (lib.filter (ext: ext.unsupported != null) selected)
+        ++ map (
+          ext: "${ext.name}: C API extensions can only be loaded at runtime, not linked in"
+        ) unlinkable;
+
       # Out-of-tree extensions are built from sources prepared by Nix, since
       # CMake cannot reach the network in the build sandbox. They are linked
       # into DuckDB, so they need no signature and no extension directory.
@@ -171,97 +178,93 @@ let
           exit $status
         }'';
     in
-    lib.throwIf (unlinkable != [ ])
-      "${
-        lib.concatMapStringsSep ", " (ext: ext.name) unlinkable
-      }: C API extensions can only be loaded at runtime, not linked in"
-      (
-        duckdb.overrideAttrs (
-          old:
-          {
-            inherit (versions) version rev;
+    lib.throwIf (problems != [ ]) "cannot build: ${lib.concatStringsSep "; " problems}" (
+      duckdb.overrideAttrs (
+        old:
+        {
+          inherit (versions) version rev;
 
-            src = duckdbSrc;
+          src = duckdbSrc;
 
-            buildInputs = old.buildInputs ++ lib.concatMap (ext: ext.buildInputs) selected;
-            nativeBuildInputs = old.nativeBuildInputs ++ lib.concatMap (ext: ext.nativeBuildInputs) selected;
+          buildInputs = old.buildInputs ++ lib.concatMap (ext: ext.buildInputs) selected;
+          nativeBuildInputs = old.nativeBuildInputs ++ lib.concatMap (ext: ext.nativeBuildInputs) selected;
 
-            cmakeFlags =
-              # nixpkgs points this at in_tree_extensions.cmake, which 2.0 reorganised
-              (builtins.filter (flag: !lib.hasPrefix "-DDUCKDB_EXTENSION_CONFIGS:STRING=" flag) old.cmakeFlags)
-              ++ [
-                # 2.0 takes the release version and commit separately
-                (lib.cmakeFeature "DUCKDB_EXPLICIT_VERSION" "v${versions.version}")
-                (lib.cmakeFeature "GIT_COMMIT_HASH" versions.rev)
-                (lib.cmakeFeature "BUILD_EXTENSIONS" (lib.concatStringsSep ";" inTreeExtensions))
-                # link the extensions as well as build them
-                (lib.cmakeBool "LINK_CORE_EXTENSIONS" true)
-                # Without local_extension_repository, which would point INSTALL
-                # at a repository in the build directory that is gone at runtime.
-                (lib.cmakeFeature "DUCKDB_CAPABILITIES" "httplib;loadable_extensions")
+          cmakeFlags =
+            # nixpkgs points this at in_tree_extensions.cmake, which 2.0 reorganised
+            (builtins.filter (flag: !lib.hasPrefix "-DDUCKDB_EXTENSION_CONFIGS:STRING=" flag) old.cmakeFlags)
+            ++ [
+              # 2.0 takes the release version and commit separately
+              (lib.cmakeFeature "DUCKDB_EXPLICIT_VERSION" "v${versions.version}")
+              (lib.cmakeFeature "GIT_COMMIT_HASH" versions.rev)
+              (lib.cmakeFeature "BUILD_EXTENSIONS" (lib.concatStringsSep ";" inTreeExtensions))
+              # link the extensions as well as build them
+              (lib.cmakeBool "LINK_CORE_EXTENSIONS" true)
+              # Without local_extension_repository, which would point INSTALL
+              # at a repository in the build directory that is gone at runtime.
+              (lib.cmakeFeature "DUCKDB_CAPABILITIES" "httplib;loadable_extensions")
+            ]
+            ++ lib.optionals (selected != [ ]) [
+              (lib.cmakeFeature "DUCKDB_EXTENSION_CONFIGS" "${extensionConfig}")
+              # The order here is the order DuckDB registers them in, and an
+              # extension that needs parquet or json fails to load if they
+              # come later. So the in-tree ones first, then ours with their
+              # dependencies ahead of them.
+              (lib.cmakeFeature "STATICALLY_LINK_EXTENSIONS" (
+                lib.concatStringsSep ";" (inTreeExtensions ++ map (ext: ext.name) selected)
+              ))
+            ]
+            ++ map (ext: lib.cmakeFeature ext.rust.cmakeVariable rustArchives.${ext.name}) withRust
+            ++ lib.concatMap (ext: ext.cmakeFlags) selected;
+
+          # doInstallCheck stays as nixpkgs sets it, so DuckDB's own test suite runs.
+          installCheckPhase =
+            assert lib.assertMsg (lib.hasInfix testCommandPrefix old.installCheckPhase)
+              "nixpkgs' duckdb no longer starts the test suite as expected, so the test configuration cannot be passed";
+            builtins.replaceStrings
+              [ testCommandPrefix testOutputDiscard "./test/unittest " ]
+              [
+                # what is left out, the tests that run apart (a few seconds), then the suite
+                "${testNotes}${testRunCommands}${testCommandPrefix}DUCKDB_TEST_CONFIG=${testConfig} "
+                testOutputKeep
+                "./test/unittest ${testExcludes}"
               ]
-              ++ lib.optionals (selected != [ ]) [
-                (lib.cmakeFeature "DUCKDB_EXTENSION_CONFIGS" "${extensionConfig}")
-                # The order here is the order DuckDB registers them in, and an
-                # extension that needs parquet or json fails to load if they
-                # come later. So the in-tree ones first, then ours with their
-                # dependencies ahead of them.
-                (lib.cmakeFeature "STATICALLY_LINK_EXTENSIONS" (
-                  lib.concatStringsSep ";" (inTreeExtensions ++ map (ext: ext.name) selected)
-                ))
-              ]
-              ++ map (ext: lib.cmakeFeature ext.rust.cmakeVariable rustArchives.${ext.name}) withRust
-              ++ lib.concatMap (ext: ext.cmakeFlags) selected;
+              old.installCheckPhase;
 
-            # doInstallCheck stays as nixpkgs sets it, so DuckDB's own test suite runs.
-            installCheckPhase =
-              assert lib.assertMsg (lib.hasInfix testCommandPrefix old.installCheckPhase)
-                "nixpkgs' duckdb no longer starts the test suite as expected, so the test configuration cannot be passed";
-              builtins.replaceStrings
-                [ testCommandPrefix testOutputDiscard "./test/unittest " ]
-                [
-                  # what is left out, the tests that run apart (a few seconds), then the suite
-                  "${testNotes}${testRunCommands}${testCommandPrefix}DUCKDB_TEST_CONFIG=${testConfig} "
-                  testOutputKeep
-                  "./test/unittest ${testExcludes}"
-                ]
-                old.installCheckPhase;
+          # passthru is not part of the derivation hash
+          passthru =
+            # pythonHash belongs to the nixpkgs release; python3Packages.duckdb
+            # must fail to evaluate until it is ported rather than use a stale one
+            (removeAttrs old.passthru [ "pythonHash" ]) // {
+              extensions = available;
+              linkedExtensions = selected;
+              # the configuration the test suite is run with
+              inherit testConfig;
+              withExtensions = select: mkDuckdb (select available);
+            };
+        }
+        # Only set when there is something to add: the build without extensions
+        # must not change when this machinery does, or Nix rebuilds it for nothing.
+        // lib.optionalAttrs (selected != [ ]) {
+          postPatch = (old.postPatch or "") + ''
+            mkdir -p extension_external
+            ${lib.concatMapStrings (ext: ''
+              cp -R ${ext.source} extension_external/${ext.name}
+              chmod -R u+w extension_external/${ext.name}
+            '') selected}
+          '';
 
-            # passthru is not part of the derivation hash
-            passthru =
-              # pythonHash belongs to the nixpkgs release; python3Packages.duckdb
-              # must fail to evaluate until it is ported rather than use a stale one
-              (removeAttrs old.passthru [ "pythonHash" ]) // {
-                extensions = available;
-                linkedExtensions = selected;
-                # the configuration the test suite is run with
-                inherit testConfig;
-                withExtensions = select: mkDuckdb (select available);
-              };
-          }
-          # Only set when there is something to add: the build without extensions
-          # must not change when this machinery does, or Nix rebuilds it for nothing.
-          // lib.optionalAttrs (selected != [ ]) {
-            postPatch = (old.postPatch or "") + ''
-              mkdir -p extension_external
-              ${lib.concatMapStrings (ext: ''
-                cp -R ${ext.source} extension_external/${ext.name}
-                chmod -R u+w extension_external/${ext.name}
-              '') selected}
-            '';
-
-            # CMake only notes "requested but not built" for an extension that
-            # has no static library, then carries on without it. Fail instead.
-            preInstall = (old.preInstall or "") + ''
-              for ext in ${lib.escapeShellArgs (map (ext: ext.name) selected)}; do
-                if [ ! -e "extension/$ext/lib''${ext}_extension.a" ]; then
-                  echo "extension $ext was requested but not built (no static library)" >&2
-                  exit 1
-                fi
-              done
-            '';
-          }
-        )
-      );
+          # CMake only notes "requested but not built" for an extension that
+          # has no static library, then carries on without it. Fail instead.
+          preInstall = (old.preInstall or "") + ''
+            for ext in ${lib.escapeShellArgs (map (ext: ext.name) selected)}; do
+              if [ ! -e "extension/$ext/lib''${ext}_extension.a" ]; then
+                echo "extension $ext was requested but not built (no static library)" >&2
+                exit 1
+              fi
+            done
+          '';
+        }
+      )
+    );
 in
 mkDuckdb [ ]

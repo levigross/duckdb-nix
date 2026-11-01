@@ -8,7 +8,9 @@ nixpkgs' `duckdb` builds only the extensions in DuckDB's own tree. Everything el
 binary, which does not suit Nix, a sandbox, or a library that is linked rather than run.
 
 Status: DuckDB 2.0.0, x86_64-linux with glibc. 23 of the 24 out-of-tree extensions
-link and pass their checks. See [Not done](#not-done).
+link and pass their checks on nixpkgs unstable, and most of them on the two latest
+stable releases (see [nixpkgs versions](#nixpkgs-versions)). See also
+[Not done](#not-done).
 
 ```nix
 duckdb.withExtensions (e: [ e.httpfs e.spatial ])
@@ -18,8 +20,25 @@ duckdb.withExtensions (e: [ e.httpfs e.spatial ])
 nix build .#duckdb-all        # all 23
 nix build .#duckdb-httpfs     # one
 nix build .#duckdb            # none: DuckDB 2.0.0 as nixpkgs would build it
+nix build .#stable-duckdb-all    # all it can, on the current stable nixpkgs (26.05)
+nix build .#previous-duckdb-all  # and on the one before (25.11)
 nix flake check
 ```
+
+## nixpkgs versions
+
+The flake pins `nixos-unstable`, `nixos-26.05` and `nixos-25.11`. Every package and
+check exists for each, the older two behind a `stable-` and a `previous-` prefix, and
+the overlay works on whichever nixpkgs you apply it to.
+
+| nixpkgs | extensions in `duckdb-all` | not available |
+|---|---|---|
+| unstable | 23 | |
+| 26.05 | 22 | spatial: its sources need GDAL 3.13, nixpkgs has 3.12 |
+| 25.11 | 21 | spatial (GDAL 3.11), azure (nixpkgs has no Azure SDK) |
+
+An extension that a nixpkgs cannot build says why when you ask for it, and is left
+out of `duckdb-all` and the checks. Nothing is backported; the answer is a newer nixpkgs.
 
 ## The extensions
 
@@ -102,6 +121,6 @@ an extension is absent, and C++ tests that cannot run with `postgres_scanner` or
   backend, and duckdb-python 2.0.0 uses nanobind, so it needs a port.
 - Fully static (`pkgsStatic`, musl) builds.
 - Other platforms. Only x86_64-linux has been built; aarch64-linux and
-  aarch64-darwin are untried, and the nixpkgs 26.05 branch has only been evaluated.
+  aarch64-darwin are untried.
 - Size: `libduckdb.so` with all 23 is 874 MB, mostly lance's DataFusion stack. Link
   only what you use.

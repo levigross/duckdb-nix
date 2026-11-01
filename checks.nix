@@ -5,7 +5,9 @@ let
 
   withHttpfs = duckdb.withExtensions (e: [ e.httpfs ]);
 
-  linkable = lib.filter (ext: ext.linkable) (lib.attrValues duckdb.extensions);
+  linkable = lib.filter (ext: ext.linkable && ext.unsupported == null) (
+    lib.attrValues duckdb.extensions
+  );
   withAll = duckdb.withExtensions (_: linkable);
 in
 {

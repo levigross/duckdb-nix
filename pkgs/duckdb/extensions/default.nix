@@ -8,7 +8,9 @@
   duckdbVersion,
   duckdbCraneLib,
   aws-sdk-cpp,
-  azure-sdk-for-cpp,
+  # older nixpkgs have none; default.nix leaves the extension out then
+  azure-sdk-for-cpp ? null,
+  bzip2,
   croaring,
   curl,
   expat,
@@ -22,9 +24,12 @@
   proj,
   snappy,
   sqlite,
-  unixodbc,
+  # unixODBC was renamed
+  unixodbc ? unixODBC,
+  unixODBC ? null,
   xz,
   zlib,
+  zstd,
 }:
 
 let
@@ -92,6 +97,8 @@ let
       dependencies ? [ ],
       # C API extensions have their own build and can only be loaded at runtime
       linkable ? true,
+      # why this nixpkgs cannot build the extension, if it cannot
+      unsupported ? null,
       # tools postPatch needs
       patchTools ? [ ],
       # shell, run inside the writable copy of the extension source
@@ -126,6 +133,7 @@ let
         cmakeFlags
         dependencies
         linkable
+        unsupported
         testSkips
         testRuns
         ;
@@ -206,6 +214,7 @@ lib.mapAttrs mkExtension {
   };
 
   azure = {
+    unsupported = if azure-sdk-for-cpp == null then "this nixpkgs has no azure-sdk-for-cpp" else null;
     buildInputs = with azure-sdk-for-cpp; [
       core
       identity
@@ -279,6 +288,11 @@ lib.mapAttrs mkExtension {
       expat
       minizip-ng
       zlib
+      # what the minizip-ng package config looks for; before 4.2 it is not propagated
+      bzip2
+      openssl
+      xz
+      zstd
     ];
     smoke = "SELECT CASE WHEN excel_text(1234.5678, '0.00') = '1234.57' THEN 1 ELSE error('excel_text') END";
   };
@@ -475,6 +489,12 @@ lib.mapAttrs mkExtension {
   };
 
   spatial = {
+    # the sources use the file handle interface of GDAL 3.13
+    unsupported =
+      if lib.versionOlder gdal.version "3.13" then
+        "its sources need GDAL 3.13 or newer, and this nixpkgs has ${gdal.version}"
+      else
+        null;
     testSkips = [
       {
         reason = "expects EPSG:4326 to be an unknown coordinate system, which spatial's coordinate system database makes known";
