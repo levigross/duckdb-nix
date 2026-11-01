@@ -162,9 +162,9 @@ relock_vortex() {
 }
 relock_vortex
 
-# Some of vortex's Rust dependencies come from git. Crane wants a hash for each
-# `source` string in the lock, fetched the way it fetches them. One prefetch per
-# repository and commit, shared by every crate from it.
+# Some of vortex's Rust dependencies come from git. Nix wants a hash for each
+# `source` string in the lock, of the checkout as fetchgit makes it (no submodules,
+# no LFS). One prefetch per repository and commit, shared by every crate from it.
 git_hashes() { # Cargo.lock -> JSON object of lock source string to hash
   local lock="$1" source url rev key json='{}'
   declare -A hashes=()
@@ -175,8 +175,7 @@ git_hashes() { # Cargo.lock -> JSON object of lock source string to hash
     rev="${source##*#}"
     key="$url $rev"
     if [ -z "${hashes[$key]:-}" ]; then
-      hashes[$key]="$(nix run nixpkgs#nix-prefetch-git -- --quiet --url "$url" --rev "$rev" \
-        --fetch-submodules --fetch-lfs | jq -r .hash)"
+      hashes[$key]="$(nix run nixpkgs#nix-prefetch-git -- --quiet --url "$url" --rev "$rev" | jq -r .hash)"
       echo "prefetched $url @ ${rev:0:10}" >&2
     fi
     json="$(jq -c --arg s "$source" --arg h "${hashes[$key]}" '. + {($s): $h}' <<<"$json")"

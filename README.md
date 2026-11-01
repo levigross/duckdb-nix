@@ -74,8 +74,10 @@ Asking for an extension that needs another gets it too (`iceberg` brings `avro` 
 ### The Rust extensions
 
 lance, delta and vortex build their Rust half by running cargo from CMake, which
-needs the network. Here it is a separate derivation (`rust-<name>`) built with
-[crane](https://github.com/ipetkov/crane) from a vendored `Cargo.lock`.
+needs the network. Here it is a separate derivation (`rust-<name>`) built by
+nixpkgs' `rustPlatform` from a `Cargo.lock` kept in the repository. Evaluating the
+flake never builds or fetches anything, so it works with
+`allow-import-from-derivation = false`, as Hydra requires.
 
 - They use the official 1.99.1 toolchain from `rust-overlay`. nixpkgs' `rustc` is
   linked against LLVM 21 while its standard library declares AVX-512 intrinsics for
@@ -85,16 +87,16 @@ needs the network. Here it is a separate derivation (`rust-<name>`) built with
   (`pkgs/duckdb/isolate-rust.nix`), which gives each a private `std` as a loadable
   extension would have.
 - vortex needed more: the `Cargo.lock` upstream commits disagrees with its own
-  `Cargo.toml` (the update script re-resolves it), crane's vendored copy of a git
-  crate lacks files the build script wants, and the build script regenerates a
-  header with a tool that needs the monorepo layout. It uses the committed header,
+  `Cargo.toml` (the update script re-resolves it), crates that take the workspace's
+  README as their documentation find none in the vendor directory, and the build
+  script regenerates a header with a tool that needs the monorepo layout. It uses the committed header,
   which upstream regenerates on every build; the smoke test is there to catch it lagging.
 
 ## Checks
 
 | | |
 |---|---|
-| `extension-pins` | every extension is the commit the release pins |
+| `extension-pins` | every extension is the commit its source names (DuckDB's configuration, run as CMake, or a community descriptor, read as YAML), and every extension DuckDB configures is packaged |
 | `httpfs` | reads a CSV over HTTP; the same query fails on plain DuckDB |
 | `all-extensions` | every extension is loaded without `INSTALL`, and each passes an offline smoke test (real round trips for vortex, lance and delta; a failed connection from libpq and MariaDB) |
 | `rust-consumer` | a Rust program using the `duckdb` crate, linked against `libduckdb`, finds the extensions; the same binary against plain DuckDB does not |
@@ -126,5 +128,5 @@ an extension is absent, and C++ tests that cannot run with `postgres_scanner` or
 - Fully static (`pkgsStatic`, musl) builds.
 - Other platforms. Only x86_64-linux has been built; aarch64-linux and
   aarch64-darwin are untried.
-- Size: `libduckdb.so` with all 23 is 874 MB, mostly lance's DataFusion stack. Link
+- Size: `libduckdb.so` with all 24 is 909 MB, mostly lance's DataFusion stack. Link
   only what you use.

@@ -13,10 +13,7 @@
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
 
-    # The Rust parts of some extensions build with the official toolchain, which
-    # bundles the LLVM its standard library expects. nixpkgs' rustc 1.99 is
-    # linked against LLVM 21, and its AVX-512 VNNI intrinsics do not match.
-    crane.url = "github:ipetkov/crane";
+    # the official Rust toolchain, see nix/overlay.nix
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";

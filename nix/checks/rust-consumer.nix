@@ -9,15 +9,12 @@
 
 let
   inherit (pkgs) lib;
-  craneLib = pkgs.duckdbCraneLib;
 
-  args = {
+  program = pkgs.duckdbRustPlatform.buildRustPackage {
     pname = "rust-consumer";
     version = "0.1.0";
     src = ../../examples/rust-consumer;
-
-    # vendored in the repository, so evaluation needs no network
-    cargoVendorDir = craneLib.vendorCargoDeps { cargoLock = ../../examples/rust-consumer/Cargo.lock; };
+    cargoLock.lockFile = ../../examples/rust-consumer/Cargo.lock;
 
     strictDeps = true;
 
@@ -29,8 +26,6 @@ let
 
     doCheck = false;
   };
-
-  program = craneLib.buildPackage (args // { cargoArtifacts = craneLib.buildDepsOnly args; });
 
   names = lib.escapeShellArgs (map (ext: ext.name) extensions);
 in

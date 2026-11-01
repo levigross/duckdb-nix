@@ -6,7 +6,7 @@
   python3,
   duckdbSrc,
   duckdbVersion,
-  duckdbCraneLib,
+  duckdbRustPlatform,
   aws-sdk-cpp,
   # older nixpkgs have none; default.nix leaves the extension out then
   azure-sdk-for-cpp ? null,
@@ -66,15 +66,15 @@ let
   # The Rust part of an extension, built here instead of by cargo inside CMake.
   # It is the unpatched pin, so that its Cargo.lock is the one vendored.
   lanceFfi = callPackage ./lance.nix {
-    craneLib = duckdbCraneLib;
+    rustPlatform = duckdbRustPlatform;
     src = fetchPin pins.lance;
   };
   deltaFfi = callPackage ./delta.nix {
-    craneLib = duckdbCraneLib;
+    rustPlatform = duckdbRustPlatform;
     src = fetchPin pins.delta.kernel;
   };
   vortexFfi = callPackage ./vortex.nix {
-    craneLib = duckdbCraneLib;
+    rustPlatform = duckdbRustPlatform;
     src = fetchPin pins.vortex;
     inherit duckdbSrc duckdbVersion;
     inherit (pins.vortex) gitHashes;
