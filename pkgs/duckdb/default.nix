@@ -236,6 +236,10 @@ let
             # must fail to evaluate until it is ported rather than use a stale one
             (removeAttrs old.passthru [ "pythonHash" ]) // {
               extensions = available;
+              # all those this nixpkgs can link in, for building with every one
+              linkableExtensions = lib.filter (ext: ext.linkable && ext.unsupported == null) (
+                lib.attrValues available
+              );
               linkedExtensions = selected;
               # the configuration the test suite is run with
               inherit testConfig;

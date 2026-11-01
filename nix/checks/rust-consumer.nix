@@ -14,10 +14,10 @@ let
   args = {
     pname = "rust-consumer";
     version = "0.1.0";
-    src = ./examples/rust-consumer;
+    src = ../../examples/rust-consumer;
 
     # vendored in the repository, so evaluation needs no network
-    cargoVendorDir = craneLib.vendorCargoDeps { cargoLock = ./examples/rust-consumer/Cargo.lock; };
+    cargoVendorDir = craneLib.vendorCargoDeps { cargoLock = ../../examples/rust-consumer/Cargo.lock; };
 
     strictDeps = true;
 

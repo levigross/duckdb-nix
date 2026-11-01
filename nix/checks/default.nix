@@ -5,9 +5,7 @@ let
 
   withHttpfs = duckdb.withExtensions (e: [ e.httpfs ]);
 
-  linkable = lib.filter (ext: ext.linkable && ext.unsupported == null) (
-    lib.attrValues duckdb.extensions
-  );
+  linkable = duckdb.linkableExtensions;
   withAll = duckdb.withExtensions (_: linkable);
 in
 {
@@ -75,14 +73,14 @@ in
     touch $out
   '';
 
-  all-extensions = import ./all-extensions-check.nix {
+  all-extensions = import ./all-extensions.nix {
     inherit pkgs;
     duckdb = withAll;
     extensions = linkable;
   };
 
   # A Rust program linked against libduckdb finds the extensions.
-  rust-consumer = import ./rust-consumer-check.nix {
+  rust-consumer = import ./rust-consumer.nix {
     inherit pkgs;
     duckdb = withAll;
     extensions = linkable;
