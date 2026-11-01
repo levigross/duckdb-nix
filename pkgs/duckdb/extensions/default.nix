@@ -215,12 +215,12 @@ lib.mapAttrs mkExtension {
 
   azure = {
     unsupported = if azure-sdk-for-cpp == null then "this nixpkgs has no azure-sdk-for-cpp" else null;
-    buildInputs = with azure-sdk-for-cpp; [
-      core
-      identity
-      storage-blobs
-      storage-common
-      storage-files-datalake
+    buildInputs = [
+      azure-sdk-for-cpp.core
+      azure-sdk-for-cpp.identity
+      azure-sdk-for-cpp.storage-blobs
+      azure-sdk-for-cpp.storage-common
+      azure-sdk-for-cpp.storage-files-datalake
     ];
     # the secret type exists only with the extension, and az:// needs credentials
     smoke = {

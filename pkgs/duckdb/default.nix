@@ -75,7 +75,7 @@ let
             ${lib.optionalString (
               ext.include != null
             ) ''INCLUDE_DIR "''${PROJECT_SOURCE_DIR}/extension_external/${ext.name}/${ext.include}"''}
-            EXTENSION_VERSION "${builtins.substring 0 10 ext.rev}")
+            EXTENSION_VERSION "${lib.substring 0 10 ext.rev}")
         '') selected
       );
 
@@ -191,7 +191,7 @@ let
 
           cmakeFlags =
             # nixpkgs points this at in_tree_extensions.cmake, which 2.0 reorganised
-            (builtins.filter (flag: !lib.hasPrefix "-DDUCKDB_EXTENSION_CONFIGS:STRING=" flag) old.cmakeFlags)
+            (lib.filter (flag: !lib.hasPrefix "-DDUCKDB_EXTENSION_CONFIGS:STRING=" flag) old.cmakeFlags)
             ++ [
               # 2.0 takes the release version and commit separately
               (lib.cmakeFeature "DUCKDB_EXPLICIT_VERSION" "v${versions.version}")
@@ -220,7 +220,7 @@ let
           installCheckPhase =
             assert lib.assertMsg (lib.hasInfix testCommandPrefix old.installCheckPhase)
               "nixpkgs' duckdb no longer starts the test suite as expected, so the test configuration cannot be passed";
-            builtins.replaceStrings
+            lib.replaceStrings
               [ testCommandPrefix testOutputDiscard "./test/unittest " ]
               [
                 # what is left out, the tests that run apart (a few seconds), then the suite
