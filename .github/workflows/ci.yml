@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# These jobs build no DuckDB: a full build with the test suite takes hours and
+# does not fit a hosted runner (see "Checks" in the README). They cover what
+# breaks without one: style, evaluation, the pins and patches of every extension,
+# and CMake configuring DuckDB with all the extensions.
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: nix develop --command scripts/lint.sh
+
+  # Every package and check of every system evaluates. Import from derivation is
+  # off, as Hydra has it: evaluating must not build.
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: nix flake check --no-build --all-systems --option allow-import-from-derivation false
+
+  # Each extension's source with its pin and patches applied, and the check that
+  # the pins are the commits DuckDB's release names.
+  sources:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          sources="$(nix eval --json .#packages.x86_64-linux --apply builtins.attrNames |
+            jq --raw-output '.[] | select(startswith("source-")) | ".#packages.x86_64-linux." + .')"
+          # shellcheck disable=SC2086 # one argument for each line
+          nix build --no-link --print-build-logs $sources .#checks.x86_64-linux.extension-pins
+
+  # CMake configures DuckDB with every extension each nixpkgs can build, which
+  # finds a missing dependency or a changed option without compiling anything.
+  configure:
+    name: configure (${{ matrix.nixpkgs }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nixpkgs: unstable
+            prefix: ""
+          - nixpkgs: stable
+            prefix: stable-
+          - nixpkgs: previous
+            prefix: previous-
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: nix build --no-link --print-build-logs .#${{ matrix.prefix }}dev-configure

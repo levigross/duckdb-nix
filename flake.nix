@@ -33,6 +33,7 @@
         ./nix/overlay.nix
         ./nix/nixpkgs.nix
         ./nix/packages.nix
+        ./nix/devshell.nix
         ./nix/templates.nix
         ./nix/checks.nix
       ];

@@ -120,6 +120,13 @@ suite runs on the result, as it does for the others.
 Counting what is loaded is the check that matters. CMake carries on without an
 extension it could not build, and says so in a line that is easy to miss.
 
+The checks above build DuckDB several times, each with its test suite: about two hours
+with 12 cores for all three nixpkgs. A free hosted GitHub runner has 4 cores and a
+six-hour limit, so run them yourself with `nix flake check`. GitHub Actions
+(`.github/workflows/ci.yml`) runs what does not need a DuckDB build: style, evaluation
+for every system without import from derivation, every extension's source and the pins
+check, and CMake configuring DuckDB for each nixpkgs.
+
 DuckDB's own test suite runs in `installCheckPhase`, as in nixpkgs. Some tests cannot
 pass in this build, and each is listed with its reason in the build log (and in
 `pkgs/duckdb/extensions/default.nix`): tests that need the network, tests that assert

@@ -35,7 +35,7 @@ jq -n --arg version "${tag#v}" --arg rev "$sha" --arg hash "$(prefetch duckdb/du
 echo "wrote $versions (duckdb $tag @ ${sha:0:10})" >&2
 
 pin_one() {
-  local file="$1" cfg name url sha subm incl patches repo owner_repo
+  local file="$1" cfg name url sha subm incl patches repo
   cfg="$(raw "repos/duckdb/duckdb/contents/.github/config/extensions/$file?ref=$tag")"
   name="$(sed -n 's/^[[:space:]]*duckdb_extension_load([[:space:]]*\([A-Za-z0-9_]*\).*/\1/p' <<<"$cfg" | head -1)"
   url="$(awk '$1=="GIT_URL"{print $2; exit}' <<<"$cfg")"
