@@ -17,35 +17,28 @@
 
       forAllSystems =
         f:
-        lib.genAttrs
-          [
-            "x86_64-linux"
-            "aarch64-linux"
-            "aarch64-darwin"
-          ]
-          (
-            system:
-            f (
-              import nixpkgs {
-                inherit system;
-                overlays = [ duckdb-nix.overlays.default ];
-              }
-            )
-          );
+        lib.genAttrs [
+          "x86_64-linux"
+          "aarch64-linux"
+          "aarch64-darwin"
+        ] (system: f nixpkgs.legacyPackages.${system});
 
-      extensionFor = pkgs: pkgs.callPackage ./extension.nix { };
+      # nixpkgs' duckdb, with the extensions of duckdb-nix and `mkExtension`
+      duckdbFor = pkgs: duckdb-nix.lib.duckdb pkgs;
+
+      extensionFor = pkgs: pkgs.callPackage ./extension.nix { duckdb = duckdbFor pkgs; };
 
       # DuckDB with the extension linked in: no INSTALL, no LOAD
-      duckdbFor = pkgs: pkgs.duckdb.withExtensions (_: [ (extensionFor pkgs) ]);
+      duckdbWithExtension = pkgs: (duckdbFor pkgs).withExtensions (_: [ (extensionFor pkgs) ]);
     in
     {
       packages = forAllSystems (pkgs: {
-        default = duckdbFor pkgs;
+        default = duckdbWithExtension pkgs;
       });
 
       checks = forAllSystems (pkgs: {
         default = pkgs.runCommand "duckdb-hello-check" { } ''
-          ${lib.getExe (duckdbFor pkgs)} -no-agent -bail -c ${lib.escapeShellArg (extensionFor pkgs).smoke.sql}
+          ${lib.getExe (duckdbWithExtension pkgs)} -no-agent -bail -c ${lib.escapeShellArg (extensionFor pkgs).smoke.sql}
           touch $out
         '';
       });

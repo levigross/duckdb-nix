@@ -14,35 +14,109 @@ stable releases (see [nixpkgs versions](#nixpkgs-versions)). See also
 
 ## Using it
 
-One extension, ready made. There is a package for each (`nix flake show` lists them):
+### Try it
+
+There is a package for each extension, and `nix flake show` lists them:
 
 ```sh
 nix run github:levigross/duckdb-nix#duckdb-spatial
+nix shell github:levigross/duckdb-nix#duckdb-httpfs
 nix build github:levigross/duckdb-nix#duckdb-all    # all 24
-nix build github:levigross/duckdb-nix#duckdb        # none: DuckDB 2.0.0 as nixpkgs would build it
 ```
 
-Any selection, built with your own nixpkgs and no overlay:
+For 26.05 and 25.11 the names carry a prefix: `#stable-duckdb-spatial`,
+`#previous-duckdb-all`. An extension that a nixpkgs cannot build has no package there.
+`#duckdb` is DuckDB 2.0.0 with none, as nixpkgs would build it.
+
+### In your flake
+
+`lib.duckdb` takes your package set and gives back `duckdb` with `withExtensions`. It
+changes nothing else in `pkgs`, which makes it the way to start:
 
 ```nix
-let
-  duckdb = duckdb-nix.lib.duckdb pkgs;
-in
-duckdb.withExtensions (e: [ e.httpfs e.spatial ])
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    duckdb-nix.url = "github:levigross/duckdb-nix";
+    duckdb-nix.inputs.nixpkgs.follows = "nixpkgs";
+  };
+
+  outputs =
+    { nixpkgs, duckdb-nix, ... }:
+    let
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      duckdb = duckdb-nix.lib.duckdb pkgs;
+    in
+    {
+      packages.x86_64-linux.default = duckdb.withExtensions (e: [
+        e.httpfs
+        e.spatial
+      ]);
+
+      devShells.x86_64-linux.default = pkgs.mkShell {
+        packages = [ (duckdb.withExtensions (e: [ e.httpfs ])) ];
+      };
+    };
+}
 ```
 
-Building with your nixpkgs matters when something links `libduckdb`: a program built
-with one glibc cannot load a library built with a newer one. If you would rather have
-`pkgs.duckdb` itself change, apply the overlay and write `pkgs.duckdb.withExtensions`
-the same way:
+`follows` makes the flake's own packages (`duckdb-nix.packages.<system>.duckdb-httpfs`)
+build with your nixpkgs too. That matters when something links `libduckdb`, since a
+program built with one glibc cannot load a library built with a newer one. With
+flake-parts it is the same call in `perSystem`:
+
+```nix
+perSystem = { pkgs, ... }: {
+  packages.default = (inputs.duckdb-nix.lib.duckdb pkgs).withExtensions (e: [ e.zipfs ]);
+};
+```
+
+### NixOS and home-manager
+
+```nix
+{ pkgs, ... }:
+{
+  environment.systemPackages = [
+    ((duckdb-nix.lib.duckdb pkgs).withExtensions (e: [ e.httpfs e.spatial ]))
+  ];
+}
+```
+
+The same expression goes in `home.packages` for home-manager.
+
+### As an overlay
 
 ```nix
 import nixpkgs { inherit system; overlays = [ duckdb-nix.overlays.default ]; }
+# or, in a NixOS configuration: nixpkgs.overlays = [ duckdb-nix.overlays.default ];
 ```
 
-For 26.05 and 25.11 the packages carry a prefix: `#stable-duckdb-spatial`,
-`#previous-duckdb-all`. An extension that a nixpkgs cannot build has no package there.
+then `pkgs.duckdb.withExtensions (e: [ ... ])` as above. This replaces `pkgs.duckdb` for
+everything that uses it, which has a cost: `python3Packages.duckdb` no longer evaluates
+(see [Not done](#not-done)). Prefer `lib.duckdb` unless you want that replacement.
 
+### From Rust or C++
+
+`libduckdb` has the extensions linked in, so a program that links it has them without
+`INSTALL` or `LOAD`. For the `duckdb` crate, point it at this build:
+
+```nix
+rustPlatform.buildRustPackage {
+  # ...
+  env = {
+    DUCKDB_LIB_DIR = "${lib.getLib duckdb}/lib";
+    DUCKDB_INCLUDE_DIR = "${lib.getDev duckdb}/include";
+  };
+}
+```
+
+with `duckdb = { version = "=1.20000.1", default-features = false }` in `Cargo.toml`.
+`examples/rust-consumer` is that program, and the `rust-consumer` check builds it. For
+[an extension of your own](#your-own-extension) the same `withExtensions` takes it.
+
+Nothing is cached yet, so the first build of a selection compiles DuckDB and runs its
+test suite. For a quick look, `.overrideAttrs { doInstallCheck = false; }` leaves the
+suite out.
 
 ## nixpkgs versions
 
@@ -120,8 +194,8 @@ nix build
 ```
 
 The template is a small extension in C++ (`hello(name)`) and a flake that links it into
-DuckDB. `duckdb.mkExtension` takes the source directory, which has a `CMakeLists.txt`
-as in [DuckDB's extension template](https://github.com/duckdb/extension-template),
+DuckDB with `duckdb-nix.lib.duckdb`. `duckdb.mkExtension` takes the source directory,
+which has a `CMakeLists.txt` as in [DuckDB's extension template](https://github.com/duckdb/extension-template),
 and the libraries it needs in `buildInputs`. `withExtensions` then links it like the
 packaged ones: `duckdb.withExtensions (e: [ e.httpfs hello ])`. DuckDB's own test
 suite runs on the result, as it does for the others.
@@ -166,7 +240,9 @@ an extension is absent, and C++ tests that cannot run with `postgres_scanner` or
 
 - Python. `python3Packages.duckdb` builds its own copy of DuckDB and needs the same
   extension list. nixpkgs' module is written for pybind11 and a custom build
-  backend, and duckdb-python 2.0.0 uses nanobind, so it needs a port.
+  backend, and duckdb-python 2.0.0 uses nanobind, so it needs a port. Until then it
+  does not evaluate with the overlay (which removes the hash it needs, since a Python
+  module for another DuckDB version would be wrong), and `lib.duckdb` leaves it alone.
 - Fully static (`pkgsStatic`, musl) builds.
 - Other platforms. Only x86_64-linux has been built; aarch64-linux and
   aarch64-darwin are untried.
