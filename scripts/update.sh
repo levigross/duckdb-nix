@@ -34,6 +34,25 @@ jq -n --arg version "${tag#v}" --arg rev "$sha" --arg hash "$(prefetch duckdb/du
   '{version: $version, rev: $rev, hash: $hash}' >"$versions"
 echo "wrote $versions (duckdb $tag @ ${sha:0:10})" >&2
 
+# The submodules of a repository at a commit, as the commit the pin records for each:
+# a JSON object of path to {owner, repo, rev, hash}. GitHub tarballs have none.
+pin_submodules() { # repo  commit  path...
+  local repo="$1" sha="$2" subs='{}' path gm_url sub_sha sub_repo
+  shift 2
+  for path in "$@"; do
+    gm_url="$(raw "repos/$repo/contents/.gitmodules?ref=$sha" |
+      awk -v p="$path" '$1=="path"{cur=$3} $1=="url" && cur==p {print $3}')"
+    sub_repo="${gm_url#https://github.com/}"
+    sub_repo="${sub_repo%.git}"
+    sub_sha="$(gh api "repos/$repo/git/trees/$sha?recursive=1" \
+      --jq ".tree[]|select(.mode==\"160000\" and .path==\"$path\")|.sha")"
+    subs="$(jq -c --arg p "$path" --arg o "${sub_repo%%/*}" --arg r "${sub_repo##*/}" \
+      --arg v "$sub_sha" --arg h "$(prefetch "$sub_repo" "$sub_sha")" \
+      '. + {($p): {owner:$o, repo:$r, rev:$v, hash:$h}}' <<<"$subs")"
+  done
+  echo "$subs"
+}
+
 pin_one() {
   local file="$1" cfg name url sha subm incl patches repo
   cfg="$(raw "repos/duckdb/duckdb/contents/.github/config/extensions/$file?ref=$tag")"
@@ -51,21 +70,13 @@ pin_one() {
   local hash
   hash="$(prefetch "$repo" "$sha")"
 
-  # submodules the build needs, resolved to the commit the pin records
-  local subs='{}' path gm_url sub_sha sub_repo
-  if [ -n "$subm" ] && [ "$subm" != extension-ci-tools ]; then
-    for path in $subm; do
-      [ "$path" = extension-ci-tools ] && continue
-      gm_url="$(raw "repos/$repo/contents/.gitmodules?ref=$sha" |
-        awk -v p="$path" '$1=="path"{cur=$3} $1=="url" && cur==p {print $3}')"
-      sub_repo="${gm_url#https://github.com/}"
-      sub_repo="${sub_repo%.git}"
-      sub_sha="$(gh api "repos/$repo/git/trees/$sha?recursive=1" \
-        --jq ".tree[]|select(.mode==\"160000\" and .path==\"$path\")|.sha")"
-      subs="$(jq -c --arg p "$path" --arg o "${sub_repo%%/*}" --arg r "${sub_repo##*/}" \
-        --arg v "$sub_sha" --arg h "$(prefetch "$sub_repo" "$sub_sha")" \
-        '. + {($p): {owner:$o, repo:$r, rev:$v, hash:$h}}' <<<"$subs")"
-    done
+  # the submodules the build needs, which is none of the ones CI uses
+  local subs='{}' paths=() path
+  for path in $subm; do
+    [ "$path" = extension-ci-tools ] || paths+=("$path")
+  done
+  if [ "${#paths[@]}" -gt 0 ]; then
+    subs="$(pin_submodules "$repo" "$sha" "${paths[@]}")"
   fi
 
   jq -n --arg name "$name" --arg o "${repo%%/*}" --arg r "${repo##*/}" --arg rev "$sha" \
@@ -76,7 +87,7 @@ pin_one() {
   echo "pinned $name" >&2
 }
 
-export -f pin_one raw prefetch
+export -f pin_one pin_submodules raw prefetch
 export tag work
 
 # test-utils is an internal backwards-compatibility test extension
@@ -101,11 +112,21 @@ for name in "${community[@]}"; do
     echo "$name: $repo@${sha:0:10} is developed against DuckDB ${built_with:0:10}, not $tag (${duckdb_rev:0:10})" >&2
     exit 1
   fi
+  # an extension repository has DuckDB and the CI tools as submodules, which the
+  # build does not use; any other is part of the extension
+  submodule_paths="$(gh api "repos/$repo/git/trees/$sha?recursive=1" --jq '.tree[] | select(.mode == "160000") | .path')"
+  mapfile -t paths < <(grep -v -x -e duckdb -e extension-ci-tools <<<"$submodule_paths" || true)
+  subs='{}'
+  if [ "${#paths[@]}" -gt 0 ]; then
+    subs="$(pin_submodules "$repo" "$sha" "${paths[@]}")"
+  fi
   jq -n --arg name "$name" --arg o "${repo%%/*}" --arg r "${repo##*/}" --arg rev "$sha" \
     --arg hash "$(prefetch "$repo" "$sha")" --arg crev "$community_rev" \
     --arg dhash "$(nix store prefetch-file --json "$descriptor" | jq -r .hash)" \
-    '{($name): {owner: $o, repo: $r, rev: $rev, hash: $hash, patches: false,
-                community: {rev: $crev, descriptorHash: $dhash}}}' >"$work/$name.json"
+    --argjson subs "$subs" \
+    '{($name): ({owner: $o, repo: $r, rev: $rev, hash: $hash, patches: false,
+                 community: {rev: $crev, descriptorHash: $dhash}}
+      + (if $subs == {} then {} else {submodules: $subs} end))}' >"$work/$name.json"
   echo "pinned $name (community)" >&2
 done
 
