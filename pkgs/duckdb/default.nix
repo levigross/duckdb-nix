@@ -18,6 +18,8 @@ let
 
   isolateRust = callPackage ./isolate-rust.nix { };
 
+  mkExtension = import ./mk-extension.nix { inherit lib; };
+
   # callPackage adds override/overrideDerivation, which are not extensions
   available =
     removeAttrs
@@ -75,7 +77,7 @@ let
             ${lib.optionalString (
               ext.include != null
             ) ''INCLUDE_DIR "''${PROJECT_SOURCE_DIR}/extension_external/${ext.name}/${ext.include}"''}
-            EXTENSION_VERSION "${lib.substring 0 10 ext.rev}")
+            EXTENSION_VERSION "${ext.version}")
         '') selected
       );
 
@@ -143,6 +145,8 @@ let
             # must fail to evaluate until it is ported rather than use a stale one
             (removeAttrs old.passthru [ "pythonHash" ]) // {
               extensions = available;
+              # for linking an extension that is not one of these, see templates/extension
+              inherit mkExtension;
               # all those this nixpkgs can link in, for building with every one
               linkableExtensions = lib.filter (ext: ext.linkable && ext.unsupported == null) (
                 lib.attrValues available
@@ -159,7 +163,7 @@ let
           postPatch = (old.postPatch or "") + ''
             mkdir -p extension_external
             ${lib.concatMapStrings (ext: ''
-              cp -R ${ext.source} extension_external/${ext.name}
+              cp -R ${ext.src} extension_external/${ext.name}
               chmod -R u+w extension_external/${ext.name}
             '') selected}
           '';

@@ -92,6 +92,21 @@ flake never builds or fetches anything, so it works with
   script regenerates a header with a tool that needs the monorepo layout. It uses the committed header,
   which upstream regenerates on every build; the smoke test is there to catch it lagging.
 
+## Your own extension
+
+```sh
+nix flake init -t github:levigross/duckdb-nix#extension
+nix build
+./result/bin/duckdb -c "SELECT hello('Nix')"
+```
+
+The template is a small extension in C++ (`hello(name)`) and a flake that links it into
+DuckDB. `duckdb.mkExtension` takes the source directory, which has a `CMakeLists.txt`
+as in [DuckDB's extension template](https://github.com/duckdb/extension-template),
+and the libraries it needs in `buildInputs`. `withExtensions` then links it like the
+packaged ones: `duckdb.withExtensions (e: [ e.httpfs hello ])`. DuckDB's own test
+suite runs on the result, as it does for the others.
+
 ## Checks
 
 | | |
@@ -100,6 +115,7 @@ flake never builds or fetches anything, so it works with
 | `httpfs` | reads a CSV over HTTP; the same query fails on plain DuckDB |
 | `all-extensions` | every extension is loaded without `INSTALL`, and each passes an offline smoke test (real round trips for vortex, lance and delta; a failed connection from libpq and MariaDB) |
 | `rust-consumer` | a Rust program using the `duckdb` crate, linked against `libduckdb`, finds the extensions; the same binary against plain DuckDB does not |
+| `example-extension` | the extension of `templates/extension` is linked into DuckDB as a user of the flake would, is loaded without `INSTALL`, and passes its smoke test (on unstable only, since the mechanism is the same for every nixpkgs) |
 
 Counting what is loaded is the check that matters. CMake carries on without an
 extension it could not build, and says so in a line that is easy to miss.

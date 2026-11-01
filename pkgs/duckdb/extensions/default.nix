@@ -80,114 +80,74 @@ let
     inherit (pins.vortex) gitHashes;
   };
 
-  mkExtension =
+  mkExtension = import ../mk-extension.nix { inherit lib; };
+
+  # An extension at the commit that DuckDB's release (or the community
+  # descriptor) pins, with its submodules and patches.
+  mkPinnedExtension =
     name:
     {
-      buildInputs ? [ ],
-      nativeBuildInputs ? [ ],
-      # The Rust static library the extension links, if it has one: the package
-      # that builds it, the archive inside it, and the CMake variable that is
-      # given the archive's path (which is not always the package's, see
-      # isolate-rust.nix).
-      rust ? null,
-      # CMake flags for the DuckDB build. Paths of other derivations go here
-      # rather than into postPatch, so that patching never waits on a build.
-      cmakeFlags ? [ ],
-      # extensions that must be linked in before this one
-      dependencies ? [ ],
-      # C API extensions have their own build and can only be loaded at runtime
-      linkable ? true,
-      # why this nixpkgs cannot build the extension, if it cannot
-      unsupported ? null,
       # tools postPatch needs
       patchTools ? [ ],
       # shell, run inside the writable copy of the extension source
       postPatch ? "",
-      # What must work offline in a build containing the extension. Either SQL
-      # that must succeed, or { sql; setup ? shell to run first; expectError ?
-      # text the SQL must fail with }, for clients that need a server. `sql` can
-      # be a list, each run as a command of its own: DuckDB parses a whole command
-      # before running any of it, so a statement that changes the syntax has to
-      # come in an earlier one.
-      smoke ? null,
-      # Tests of DuckDB's own suite that cannot pass once this extension is
-      # linked in, as [ { reason; paths; } ] for SQL test scripts or
-      # [ { reason; names; } ] for C++ test cases. Each needs a reason, because
-      # skipping a test is giving up on it.
-      testSkips ? [ ],
-      # Tests that need an extension loaded which the suite would not load by
-      # itself, as [ { reason; loads; tests; } ]. The suite loads only what a test
-      # names, while the product loads everything linked at startup. Preloading for
-      # the whole suite would break the tests that assert an extension is absent, so
-      # these run on their own, with `loads` loaded, and are left out of the main run.
-      testRuns ? [ ],
-    }:
+      ...
+    }@args:
     let
       pin = pins.${name};
       submodules = pin.submodules or { };
     in
-    {
-      _type = "duckdbExtension";
-      inherit
-        name
-        buildInputs
-        nativeBuildInputs
-        rust
-        cmakeFlags
-        dependencies
-        linkable
-        unsupported
-        testSkips
-        testRuns
-        ;
-      smoke = lib.mapNullable (
-        s:
-        {
-          setup = "";
-          expectError = null;
-        }
-        // (if builtins.isString s then { sql = s; } else s)
-      ) smoke;
+    mkExtension (
+      removeAttrs args [
+        "patchTools"
+        "postPatch"
+      ]
+      // {
+        inherit name;
+        version = lib.substring 0 10 pin.rev;
+        include = pin.include or null;
+
+        # The pinned source with its submodules, DuckDB's patches for it and
+        # ours applied. A separate derivation, so a patch that no longer applies
+        # fails in seconds instead of after a DuckDB build.
+        src =
+          runCommand "duckdb-extension-${name}-source"
+            {
+              nativeBuildInputs = patchTools;
+            }
+            ''
+              cp -R ${fetchPin pin} $out
+              chmod -R u+w $out
+              cd $out
+
+              ${lib.concatStrings (
+                lib.mapAttrsToList (path: sub: ''
+                  rm -rf ${path}
+                  mkdir -p ${builtins.dirOf path}
+                  cp -R ${fetchPin sub} ${path}
+                  chmod -R u+w ${path}
+                '') submodules
+              )}
+
+              ${lib.optionalString pin.patches ''
+                # as scripts/apply_extension_patches.py does
+                for patch in ${duckdbSrc}/.github/patches/extensions/${name}/*.patch; do
+                  echo "applying $patch"
+                  patch -p1 --forward -i "$patch"
+                done
+              ''}
+
+              ${postPatch}
+            '';
+      }
+    )
+    // {
       inherit (pin) owner repo rev;
-      include = pin.include or null;
       # in duckdb/community-extensions rather than in DuckDB's own configuration
       community = pin.community or null;
-
-      # The pinned source with its submodules, DuckDB's patches for it and
-      # ours applied. A separate derivation, so a patch that no longer applies
-      # fails in seconds instead of after a DuckDB build.
-      source =
-        runCommand "duckdb-extension-${name}-source"
-          {
-            nativeBuildInputs = patchTools;
-          }
-          ''
-            cp -R ${fetchPin pin} $out
-            chmod -R u+w $out
-            cd $out
-
-            ${lib.concatStrings (
-              lib.mapAttrsToList (path: sub: ''
-                rm -rf ${path}
-                mkdir -p ${builtins.dirOf path}
-                cp -R ${fetchPin sub} ${path}
-                chmod -R u+w ${path}
-              '') submodules
-            )}
-
-            ${lib.optionalString pin.patches ''
-              # as scripts/apply_extension_patches.py does
-              for patch in ${duckdbSrc}/.github/patches/extensions/${name}/*.patch; do
-                echo "applying $patch"
-                patch -p1 --forward -i "$patch"
-              done
-            ''}
-
-            ${postPatch}
-          '';
     };
 in
-lib.mapAttrs mkExtension {
+lib.mapAttrs mkPinnedExtension {
   avro = {
     buildInputs = [
       jansson

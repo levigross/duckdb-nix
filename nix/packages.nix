@@ -66,7 +66,7 @@ _:
       # DuckDB, and the Rust part of those that have one, to build it on its own.
       # They do not depend on the nixpkgs, so there is one of each.
       partsOfExtensions =
-        lib.mapAttrs' (name: ext: lib.nameValuePair "source-${name}" ext.source) pkgs.duckdb.extensions
+        lib.mapAttrs' (name: ext: lib.nameValuePair "source-${name}" ext.src) pkgs.duckdb.extensions
         // lib.mapAttrs' (name: ext: lib.nameValuePair "rust-${name}" ext.rust.package) (
           lib.filterAttrs (_: ext: ext.rust != null) pkgs.duckdb.extensions
         );
