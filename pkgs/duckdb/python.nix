@@ -112,6 +112,15 @@ buildPythonPackage {
         sed -i 's/^${variable} = ".*"/${variable} = "${inTree}"/' pyproject.toml
         grep -q '^${variable} = "${inTree}"' pyproject.toml
       ''
+      + lib.optionalString (lib.versionAtLeast build.version "1.5") ''
+        # The module links only the extensions that BUILD_EXTENSIONS names, and those of this
+        # flake are loaded through DUCKDB_EXTENSION_CONFIGS: naming them in BUILD_EXTENSIONS
+        # would load them from DuckDB's own tree, before their configs. So the loop that
+        # links them is given the names as well.
+        substituteInPlace cmake/duckdb_loader.cmake \
+          --replace-fail 'foreach(ext IN LISTS BUILD_EXTENSIONS)' \
+                         'foreach(ext IN LISTS BUILD_EXTENSIONS FLAKE_LINK_EXTENSIONS)'
+      ''
   );
 
   nativeBuildInputs = [
@@ -156,7 +165,15 @@ buildPythonPackage {
             "-DGIT_COMMIT_HASH=${build.rev}"
           ]
         else
-          [ "-DOVERRIDE_GIT_DESCRIBE=v${build.version}-0-g${build.rev}" ]
+          [
+            "-DOVERRIDE_GIT_DESCRIBE=v${build.version}-0-g${build.rev}"
+            # DuckDB's CMake adds jemalloc on Linux. Left out, as the 1.5 module was built and
+            # checked; it is not what stops the 1.4 module from loading (see the README).
+            "-DSKIP_EXTENSIONS=jemalloc"
+          ]
+          ++ lib.optional (lib.versionAtLeast build.version "1.5") (
+            lib.cmakeFeature "FLAKE_LINK_EXTENSIONS" (lib.concatStringsSep ";" names)
+          )
       )
       ++ [
         (lib.cmakeFeature "DUCKDB_EXTENSION_CONFIGS" "${build.extensionConfig}")
