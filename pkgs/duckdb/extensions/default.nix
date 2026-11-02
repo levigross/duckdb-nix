@@ -73,6 +73,7 @@ let
     rustPlatform = duckdbRustPlatform;
     src = fetchPin pins.lance;
     lockFile = rustLocks + "/lance.Cargo.lock";
+    replaceLock = lib.versionOlder release "2";
   };
   deltaFfi = callPackage ./delta.nix {
     rustPlatform = duckdbRustPlatform;

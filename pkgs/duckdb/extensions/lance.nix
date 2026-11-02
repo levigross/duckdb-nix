@@ -12,34 +12,45 @@
   openssl,
   src,
   lockFile,
+  # whether the lock file kept here differs from the one in the source, and has to replace it
+  replaceLock ? false,
 }:
 
-rustPlatform.buildRustPackage {
-  pname = "lance-duckdb-ffi";
-  version = "0.1.0";
-  inherit src;
+rustPlatform.buildRustPackage (
+  {
+    pname = "lance-duckdb-ffi";
+    version = "0.1.0";
+    inherit src;
 
-  cargoLock = { inherit lockFile; };
+    cargoLock = { inherit lockFile; };
 
-  strictDeps = true;
-  nativeBuildInputs = [
-    protobuf
-    # aws-lc-sys builds its C code with cmake
-    cmake
-    perl
-    pkg-config
-  ];
-  buildInputs = [ openssl ];
-  dontUseCmakeConfigure = true;
+    strictDeps = true;
+    nativeBuildInputs = [
+      protobuf
+      # aws-lc-sys builds its C code with cmake
+      cmake
+      perl
+      pkg-config
+    ];
+    buildInputs = [ openssl ];
+    dontUseCmakeConfigure = true;
 
-  # prost-build needs protoc
-  env.PROTOC = lib.getExe protobuf;
+    # prost-build needs protoc
+    env.PROTOC = lib.getExe protobuf;
 
-  doCheck = false;
+    doCheck = false;
 
-  meta = {
-    description = "Rust static library of DuckDB's lance extension";
-    homepage = "https://github.com/lance-format/lance-duckdb";
-    license = lib.licenses.asl20;
-  };
-}
+    meta = {
+      description = "Rust static library of DuckDB's lance extension";
+      homepage = "https://github.com/lance-format/lance-duckdb";
+      license = lib.licenses.asl20;
+    };
+  }
+  # The update script raises a crate that does not build with this toolchain, so the
+  # lock differs from the source's. Not set when it does not, so that build stays as it was.
+  // lib.optionalAttrs replaceLock {
+    prePatch = ''
+      cp ${lockFile} Cargo.lock
+    '';
+  }
+)
