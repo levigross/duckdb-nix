@@ -162,6 +162,16 @@ let
       # Before 2.0 the extension is laid out as it was in DuckDB's own tree
       fts.include = "extension/fts/include";
 
+      # The same patch as below, for a CMake that writes the link lines over several
+      # lines. Its range has to end at the first of them, or it takes the rest of the file.
+      lance = args: {
+        postPatch =
+          lib.replaceStrings
+            [ "target_link_libraries(\${EXTENSION_NAME} debug" ]
+            [ "target_link_libraries($" ]
+            args.postPatch;
+      };
+
       # The same patch as below, for a CMake whose external project ends at LOG_BUILD
       delta = args: {
         postPatch = lib.replaceStrings [ "LOG_OUTPUT_ON_FAILURE ON)" ] [ "LOG_BUILD ON)" ] args.postPatch;
@@ -200,6 +210,11 @@ let
         ! grep -q 'ExternalProject_Add' CMakeLists.txt
       '';
 
+      # The 1.4 sources use the API of MySQL's own client library (my_bool is gone from it,
+      # but SSL_MODE_PREFERRED and mysql_com.h are not in MariaDB's), which nixpkgs only
+      # has as part of mysql80.
+      mysql_scanner.unsupported = "its sources need MySQL's client library, which nixpkgs only ships inside the server; MariaDB's is not the same API";
+
       # These sources still use the file handle interface of GDAL before 3.13, which
       # the definition below adapts newer sources away from, so only older GDAL builds them.
       spatial = {
@@ -217,7 +232,15 @@ let
             --replace-fail "unofficial::sqlite3::sqlite3" "SQLite::SQLite3"
 
           substituteInPlace src/spatial/modules/gdal/gdal_module.cpp \
-            --replace-fail "OGRRegisterAllInternal();" "GDALAllRegister();"
+            --replace-fail "OGRRegisterAllInternal();" "GDALAllRegister();" \
+            --replace-fail "int Eof() override {" "void ClearErr() override {
+          }
+
+          int Error() override {
+            return 0;
+          }
+
+          int Eof() override {"
 
           # nixpkgs sqlite is built without SQLITE_USE_URI, so the embedded proj.db URI needs the flag
           substituteInPlace src/spatial/modules/proj/proj_module.cpp \
