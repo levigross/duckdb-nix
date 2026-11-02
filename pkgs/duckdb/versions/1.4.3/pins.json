@@ -105,6 +105,17 @@
     "repo": "duckdb-postgres",
     "rev": "b63ef4b1eb007320840b6d1760f3c9b139bb3b49"
   },
+  "psql": {
+    "community": {
+      "descriptorHash": "sha256-HGvk8TsxI9x+H+wBime90j7CUcvmPgSqXPFNJjJxc3E=",
+      "rev": "7636c91eeb84a9be97274c42c1f65b55794755df"
+    },
+    "hash": "sha256-+yjphOPgiMAzev/24XeWuFbyHzPiOsU2rOvPtC64VLo=",
+    "owner": "ywelsch",
+    "patches": false,
+    "repo": "duckdb-psql",
+    "rev": "f0ee86e08020f4b7d7300da5be9c7a0f01c63dce"
+  },
   "spatial": {
     "hash": "sha256-gjrie/wP0Bk3NL7eSEIYlOQks4H0xu6rvW6z8a/OOmk=",
     "include": "src/spatial",
@@ -134,11 +145,49 @@
     "repo": "unity_catalog",
     "rev": "1ad4f0b1fb12f661ff58fc91c2c9e7022591ea4b"
   },
+  "vortex": {
+    "gitHashes": {},
+    "hash": "sha256-ybntbhIShNcxlaFxmjo831cctdUbbzdsfbjtx8y5rPA=",
+    "owner": "vortex-data",
+    "patches": true,
+    "repo": "duckdb-vortex",
+    "rev": "dae36cd56988da2b47f06a1f63df0cfb47a97a50",
+    "submodules": {
+      "vortex": {
+        "hash": "sha256-9TSUT/+hY2E0uWOf12vKLN7a9uUcwEKwfG2IPsq9beM=",
+        "owner": "vortex-data",
+        "repo": "vortex",
+        "rev": "76aeed61f1292f8430e157b039039ad9186ac107"
+      }
+    }
+  },
   "vss": {
     "hash": "sha256-lvSzzmDoY4hUGrUgsdjihzpYEX2pl25ioMGWgSK6cUY=",
     "owner": "duckdb",
     "patches": false,
     "repo": "duckdb-vss",
     "rev": "c8a4efe05003d8ef6eaad34f5521cf50126c9967"
+  },
+  "webbed": {
+    "community": {
+      "descriptorHash": "sha256-x6gBF2Lixc4btDLS35rvK/NQCw39qvpsqp8SIfX7jc0=",
+      "rev": "7636c91eeb84a9be97274c42c1f65b55794755df"
+    },
+    "hash": "sha256-73yUQ/jXPpJrCfU0X1jJkuAHm7z51kzMRYpuifjwXaE=",
+    "owner": "teaguesterling",
+    "patches": false,
+    "repo": "duckdb_webbed",
+    "rev": "d9745553de02449d5ea417910194573655424171"
+  },
+  "zipfs": {
+    "community": {
+      "descriptorHash": "sha256-aj3sSFqGDDS+DN+6dRPvnXPQkE4EdK2JDHriaYmKsjQ=",
+      "rev": "7636c91eeb84a9be97274c42c1f65b55794755df"
+    },
+    "hash": "sha256-kiaGsfAlj1RTsFYPXsco+KnS989DQZHqP4/SKpKbuvY=",
+    "owner": "isaacbrodsky",
+    "patches": false,
+    "repo": "duckdb-zipfs",
+    "rev": "f548cb255f78950fab300953a21e595a41be4b98"
   }
 }

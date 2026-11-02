@@ -1,0 +1,4 @@
+{
+  "duckpgq": "its repository builds against a fork of DuckDB (git@github.com:cwida/duckdb-pgq.git), whose changes to the parser DuckDB v1.4.3 does not have, so it cannot be linked in; it is offered in loadableExtensions",
+  "sheetreader": "the community-extensions registry published no build of it for DuckDB v1.4.3"
+}

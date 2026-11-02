@@ -134,6 +134,36 @@
       }
     }
   },
+  "psql": {
+    "community": {
+      "descriptorHash": "sha256-Nk/BXI1b7cbdEU+ZKbA5oB5ZMyHSZdmI+crCQhLtqvw=",
+      "rev": "38374497f190adf436d537edcca64c5e5a6143b2"
+    },
+    "hash": "sha256-PtkwlXkglAwFfsyC4NE/dlQPuyomjO1gOr64xGQCEoc=",
+    "owner": "ywelsch",
+    "patches": false,
+    "repo": "duckdb-psql",
+    "rev": "4e310a6056dff4808de4be4bd0c0e571ed6d7a5a"
+  },
+  "sheetreader": {
+    "community": {
+      "descriptorHash": "sha256-JMQ0F2upvKnKH7e+Tz/7sKczNDTfwI+ZFxGPTwgmpig=",
+      "rev": "38374497f190adf436d537edcca64c5e5a6143b2"
+    },
+    "hash": "sha256-cpWBdUzm55wR47dEHHtH12i/QU6L2CxzEXe9qKX+VmY=",
+    "owner": "polydbms",
+    "patches": false,
+    "repo": "sheetreader-duckdb",
+    "rev": "e2b9366c4c409f012a6a31191e629c96628e17e6",
+    "submodules": {
+      "src/include/sheetreader-core": {
+        "hash": "sha256-35DR2xfsdwdJVgP9vOzFNB8D7e8oP9JV59igG/ZSD8Q=",
+        "owner": "polydbms",
+        "repo": "sheetreader-core",
+        "rev": "6494e23d1480647db0fb2c4ac39f3a6af7426748"
+      }
+    }
+  },
   "spatial": {
     "hash": "sha256-DHL05SJqQRJmTlp2LM5+85zMMUJc3wCaKyHIfIRFHwY=",
     "include": "src/spatial",
@@ -163,11 +193,49 @@
     "repo": "unity_catalog",
     "rev": "02024095fe6eeed6f53e78dce43e83c7424abec2"
   },
+  "vortex": {
+    "gitHashes": {},
+    "hash": "sha256-7Dchv0RwLS0AZicaRkGaG1pXq/RtUQZKa1Mpy9vQb0A=",
+    "owner": "vortex-data",
+    "patches": true,
+    "repo": "duckdb-vortex",
+    "rev": "6ea8bd77fe8e6e814bde11b6981f934fa82ab961",
+    "submodules": {
+      "vortex": {
+        "hash": "sha256-nRFkAPC75MXe18sRr1BWT7bkZzG/OlorxPWmLnR+X+0=",
+        "owner": "vortex-data",
+        "repo": "vortex",
+        "rev": "2a0d1b7945c315f1e87a08a1038d36c984b8d456"
+      }
+    }
+  },
   "vss": {
     "hash": "sha256-txtsTm3OGNDGI5jeMvy9JA7R6pzb22gy5ArxTVc2Usw=",
     "owner": "duckdb",
     "patches": false,
     "repo": "duckdb-vss",
     "rev": "b833341c8737fd3f3558c7720cc575ae8fc82598"
+  },
+  "webbed": {
+    "community": {
+      "descriptorHash": "sha256-udQ9WPA6N3nLZ+SSiTZlohegQQJMh9qyDcGl5v/K9MM=",
+      "rev": "38374497f190adf436d537edcca64c5e5a6143b2"
+    },
+    "hash": "sha256-3HixiU8ch7FOTb06ehR08Cq6hGllgmS1Ozd8kMD7lw8=",
+    "owner": "teaguesterling",
+    "patches": false,
+    "repo": "duckdb_webbed",
+    "rev": "1c5dbe889d0b6efaf1cda2e26ee370de2d1612c6"
+  },
+  "zipfs": {
+    "community": {
+      "descriptorHash": "sha256-EeaCQJR9eVZDyjAxFwwqMPaR6MTFp+J24rSQ7x8+kGs=",
+      "rev": "38374497f190adf436d537edcca64c5e5a6143b2"
+    },
+    "hash": "sha256-bzL+DrEojskKptbjAHryZbps2JSc7R3/vWHn6HvzF/o=",
+    "owner": "isaacbrodsky",
+    "patches": false,
+    "repo": "duckdb-zipfs",
+    "rev": "8bd418ecb66852c475379796a9c5c986c588168c"
   }
 }

@@ -1,0 +1,36 @@
+{
+  "duckpgq": {
+    "platforms": {
+      "aarch64-darwin": {
+        "hash": "sha256-ROb7I7NPSL3Xrd/p+H5KFuuKnGm4UkRzU+L3QjIkXAA=",
+        "url": "https://community-extensions.duckdb.org/v1.4.3/osx_arm64/duckpgq.duckdb_extension.gz"
+      },
+      "aarch64-linux": {
+        "hash": "sha256-VOVczXCt+/k/CFs6JisLysD0OwES3snybh597lzsXmE=",
+        "url": "https://community-extensions.duckdb.org/v1.4.3/linux_arm64/duckpgq.duckdb_extension.gz"
+      },
+      "x86_64-darwin": {
+        "hash": "sha256-xP92gJfGOfgU9mZ1mak0H9y4uKm2Vb1Op94SVLsqp6Q=",
+        "url": "https://community-extensions.duckdb.org/v1.4.3/osx_amd64/duckpgq.duckdb_extension.gz"
+      },
+      "x86_64-linux": {
+        "hash": "sha256-rWv9a89kChn/SKqCmRvkvzEbi5CXcAlQzJ5Of/2I8hs=",
+        "url": "https://community-extensions.duckdb.org/v1.4.3/linux_amd64/duckpgq.duckdb_extension.gz"
+      }
+    },
+    "source": {
+      "duckdb": {
+        "hash": "sha256-4CGIwVx1ieZFnoAoSCDW0ny/ky7fpb8anL3SY/F3iew=",
+        "owner": "cwida",
+        "repo": "duckdb-pgq",
+        "rev": "f71c0ced7777fa35ef8174940536931ba3f2244f"
+      },
+      "extension": {
+        "hash": "sha256-ExMNQTvO3igis0cbA5Tp7gfLTDAIz4K/GR4vZtP62bE=",
+        "owner": "cwida",
+        "repo": "duckpgq-extension",
+        "rev": "ffeee447afd82247fd5ffd1f3f314392d6f7dab1"
+      }
+    }
+  }
+}
