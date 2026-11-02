@@ -13,12 +13,15 @@ let
 
   names = lib.concatMapStringsSep ", " (ext: "'${ext.name}'") extensions;
 
+  # `-no-agent` is an option of the 2.x shell; the shells of 1.4 and 1.5 reject it.
+  noAgent = lib.optionalString (lib.versionAtLeast duckdb.version "2") " -no-agent";
+
   smoke =
     ext:
     let
       s = ext.smoke;
       commands = lib.concatMapStringsSep " " (sql: "-c ${lib.escapeShellArg sql}") (lib.toList s.sql);
-      run = "${lib.getExe duckdb} -no-agent -bail ${commands}";
+      run = "${lib.getExe duckdb}${noAgent} -bail ${commands}";
     in
     ''
       echo "smoke: ${ext.name}"
@@ -41,7 +44,7 @@ let
 in
 pkgs.runCommand "duckdb-all-extensions-check" { } ''
   export HOME=$TMPDIR
-  duckdb="${lib.getExe duckdb} -no-agent"
+  duckdb="${lib.getExe duckdb}${noAgent}"
 
   not_loaded=$($duckdb -noheader -list -c \
     "SELECT extension_name FROM duckdb_extensions() WHERE extension_name IN (${names}) AND NOT loaded ORDER BY 1")
