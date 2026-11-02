@@ -465,13 +465,30 @@ lib.mapAttrs mkPinnedExtension {
       rm ffi.cmake
       ! grep -q 'ExternalProject_Add' CMakeLists.txt
     '';
-    # an attached Delta database is one table, named after the alias
-    smoke = ''
-      ATTACH 'smoke_delta' AS d (TYPE delta);
-      CREATE TABLE d.d(i INTEGER, s VARCHAR);
-      INSERT INTO d.d VALUES (1, 'a'), (2, 'b'), (3, 'c');
-      SELECT CASE WHEN sum(i) = 6 THEN 1 ELSE error('delta round trip') END FROM delta_scan('smoke_delta');
-    '';
+    smoke =
+      if lib.versionAtLeast release "2" then
+        # an attached Delta database is one table, named after the alias
+        ''
+          ATTACH 'smoke_delta' AS d (TYPE delta);
+          CREATE TABLE d.d(i INTEGER, s VARCHAR);
+          INSERT INTO d.d VALUES (1, 'a'), (2, 'b'), (3, 'c');
+          SELECT CASE WHEN sum(i) = 6 THEN 1 ELSE error('delta round trip') END FROM delta_scan('smoke_delta');
+        ''
+      else
+        # Before 2.0 the extension only reads, so the table is written by hand: a
+        # Parquet file from DuckDB and the log that makes it a Delta table.
+        {
+          setup = ''
+            mkdir -p smoke_delta/_delta_log
+            $duckdb -c "COPY (SELECT i::BIGINT AS i, 'row ' || i AS s FROM range(1, 4) t(i)) TO 'smoke_delta/part-0.parquet' (FORMAT parquet)"
+            cat > smoke_delta/_delta_log/00000000000000000000.json <<EOF
+            {"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+            {"metaData":{"id":"00000000-0000-0000-0000-000000000001","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"i\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}},{\"name\":\"s\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":0}}
+            {"add":{"path":"part-0.parquet","partitionValues":{},"size":$(stat -c %s smoke_delta/part-0.parquet),"modificationTime":0,"dataChange":true}}
+            EOF
+          '';
+          sql = "SELECT CASE WHEN count(*) = 3 AND sum(i) = 6 THEN 1 ELSE error('delta read') END FROM delta_scan('smoke_delta')";
+        };
   };
 
   ducklake = {
@@ -526,13 +543,25 @@ lib.mapAttrs mkPinnedExtension {
     smoke = "SELECT CASE WHEN excel_text(1234.5678, '0.00') = '1234.57' THEN 1 ELSE error('excel_text') END";
   };
 
-  fts.smoke = ''
-    CREATE TABLE docs(id INTEGER, body VARCHAR);
-    INSERT INTO docs VALUES (1, 'the quick brown fox'), (2, 'a lazy dog');
-    PRAGMA create_fts_index('docs', 'id', 'body');
-    SELECT CASE WHEN count(*) = 1 THEN 1 ELSE error('fts match') END
-    FROM (SELECT fts_main_docs.match_bm25(id, 'fox') AS score FROM docs) WHERE score IS NOT NULL;
-  '';
+  fts.smoke =
+    if lib.versionOlder release "2" then
+      # DuckDB 1.5.2 expands a PRAGMA that runs a query before it runs the other
+      # statements of the command, when the table is not there yet: one command each
+      {
+        sql = [
+          "CREATE TABLE docs(id INTEGER, body VARCHAR); INSERT INTO docs VALUES (1, 'the quick brown fox'), (2, 'a lazy dog')"
+          "PRAGMA create_fts_index('docs', 'id', 'body')"
+          "SELECT CASE WHEN count(*) = 1 THEN 1 ELSE error('fts match') END FROM (SELECT fts_main_docs.match_bm25(id, 'fox') AS score FROM docs) WHERE score IS NOT NULL"
+        ];
+      }
+    else
+      ''
+        CREATE TABLE docs(id INTEGER, body VARCHAR);
+        INSERT INTO docs VALUES (1, 'the quick brown fox'), (2, 'a lazy dog');
+        PRAGMA create_fts_index('docs', 'id', 'body');
+        SELECT CASE WHEN count(*) = 1 THEN 1 ELSE error('fts match') END
+        FROM (SELECT fts_main_docs.match_bm25(id, 'fox') AS score FROM docs) WHERE score IS NOT NULL;
+      '';
 
   glue = {
     buildInputs = [
