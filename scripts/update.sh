@@ -12,6 +12,13 @@
 #
 # Needs: gh, jq, nix. Submodules other than extension-ci-tools (which only CI
 # uses) are pinned too, since GitHub tarballs do not include submodules.
+#
+# Everything is built in a temporary directory and replaces the version's
+# directory only once the whole run has succeeded, so a failure leaves the
+# previous state alone. What a release does not have, or has in a shape that is
+# not packaged yet, is skipped with a message: lance and delta in the releases
+# before they were added, vortex before 2.0, and the community extensions for
+# any release but the latest.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,11 +30,12 @@ prefetch() { nix flake prefetch "github:$1/$2" --json | jq -r .hash; }
 
 tag="${1:-$(gh release list -R duckdb/duckdb --exclude-pre-releases --limit 1 --json tagName --jq '.[].tagName')}"
 
-# one directory of state for each DuckDB version
+# one directory of state for each DuckDB version, which is written last
 dir="$root/pkgs/duckdb/versions/${tag#v}"
-mkdir -p "$dir/rust"
-versions="$dir/version.json"
-out="$dir/pins.json"
+stage="$work/stage"
+mkdir -p "$stage/rust"
+versions="$stage/version.json"
+out="$stage/pins.json"
 
 # DuckDB itself. An annotated tag points at a tag object, not the commit.
 read -r type sha < <(gh api "repos/duckdb/duckdb/git/ref/tags/$tag" --jq '"\(.object.type) \(.object.sha)"')
@@ -36,7 +44,7 @@ if [ "$type" = tag ]; then
 fi
 jq -n --arg version "${tag#v}" --arg rev "$sha" --arg hash "$(prefetch duckdb/duckdb "$tag")" \
   '{version: $version, rev: $rev, hash: $hash}' >"$versions"
-echo "wrote $versions (duckdb $tag @ ${sha:0:10})" >&2
+echo "version.json: duckdb $tag @ ${sha:0:10}" >&2
 
 # The submodules of a repository at a commit, as the commit the pin records for each:
 # a JSON object of path to {owner, repo, rev, hash}. GitHub tarballs have none.
@@ -71,6 +79,18 @@ pin_one() {
   repo="${url#https://github.com/}"
   repo="${repo%.git}"
 
+  # The vortex expression builds vortex-extension/, which duckdb-vortex has from
+  # DuckDB 2.0. Before, its Rust is the `vortex` git submodule, which is not
+  # packaged yet.
+  local tree
+  if [ "$name" = vortex ]; then
+    tree="$(gh api "repos/$repo/git/trees/$sha" --jq '.tree[] | select(.path == "vortex-extension") | .sha')"
+    if [ -z "$tree" ]; then
+      echo "skip vortex: $repo@${sha:0:10} has no vortex-extension/, its Rust is the vortex git submodule, which is not packaged yet" >&2
+      return 0
+    fi
+  fi
+
   local hash
   hash="$(prefetch "$repo" "$sha")"
 
@@ -94,10 +114,11 @@ pin_one() {
 export -f pin_one pin_submodules raw prefetch
 export tag work
 
-# test-utils is an internal backwards-compatibility test extension
+# test-utils is an internal backwards-compatibility test extension. Each pin_one
+# runs in a shell of its own, which must stop at the first failure as this one does.
 gh api "repos/duckdb/duckdb/contents/.github/config/extensions?ref=$tag" --jq '.[].name' |
   grep -v '^test-utils' |
-  xargs -P 8 -I{} bash -c 'pin_one {}'
+  xargs -P 8 -I{} bash -e -o pipefail -c 'pin_one {}'
 
 # Community extensions are not in DuckDB's own config. Their descriptors in
 # duckdb/community-extensions name the commit to build. DuckDB's own pins are
@@ -115,7 +136,17 @@ community=(
   webbed
   zipfs
 )
-community_rev="$(gh api repos/duckdb/community-extensions/commits/main --jq .sha)"
+# The descriptors used are those at the HEAD of the repository, which fit only the
+# latest release; choosing them for an older one is not implemented.
+community_rev=
+major="${tag#v}"
+major="${major%%.*}"
+if [ "$major" -lt 2 ]; then
+  echo "skip community extensions (${community[*]}): not implemented for $tag, only for DuckDB 2.0 and later" >&2
+  community=()
+else
+  community_rev="$(gh api repos/duckdb/community-extensions/commits/main --jq .sha)"
+fi
 duckdb_rev="$(jq -r .rev "$versions")"
 for name in "${community[@]}"; do
   descriptor="https://raw.githubusercontent.com/duckdb/community-extensions/$community_rev/extensions/$name/description.yml"
@@ -145,36 +176,64 @@ for name in "${community[@]}"; do
   echo "pinned $name (community)" >&2
 done
 
+# whether the release has an extension, after pin_one
+pinned() { [ -f "$work/$1.json" ]; }
+
 # The delta extension clones delta-kernel-rs and builds it with cargo. Pin the
 # repository and tag its own CMake names, so Nix can build it instead.
-delta_rev="$(jq -r .delta.rev "$work/delta.json")"
-kernel_cmake="$(raw "repos/duckdb/duckdb-delta/contents/CMakeLists.txt?ref=$delta_rev")"
-kernel_repo="$(awk '$1=="GIT_REPOSITORY"{gsub(/"/,"",$2); print $2; exit}' <<<"$kernel_cmake")"
-kernel_repo="${kernel_repo#https://github.com/}"
-kernel_tag="$(awk '$1=="GIT_TAG"{print $2; exit}' <<<"$kernel_cmake")"
-[ -n "$kernel_repo" ] && [ -n "$kernel_tag" ] || { echo "no delta-kernel-rs in duckdb-delta's CMake" >&2; exit 1; }
-jq --arg o "${kernel_repo%%/*}" --arg r "${kernel_repo##*/}" --arg t "$kernel_tag" \
-  --arg h "$(prefetch "$kernel_repo" "$kernel_tag")" \
-  '.delta.kernel = {owner: $o, repo: $r, rev: $t, hash: $h}' "$work/delta.json" >"$work/delta.json.new"
-mv "$work/delta.json.new" "$work/delta.json"
-echo "pinned delta-kernel-rs $kernel_tag" >&2
+if pinned delta; then
+  delta_rev="$(jq -r .delta.rev "$work/delta.json")"
+  kernel_cmake="$(raw "repos/duckdb/duckdb-delta/contents/CMakeLists.txt?ref=$delta_rev")"
+  kernel_repo="$(awk '$1=="GIT_REPOSITORY"{gsub(/"/,"",$2); print $2; exit}' <<<"$kernel_cmake")"
+  kernel_repo="${kernel_repo#https://github.com/}"
+  kernel_tag="$(awk '$1=="GIT_TAG"{print $2; exit}' <<<"$kernel_cmake")"
+  [ -n "$kernel_repo" ] && [ -n "$kernel_tag" ] || { echo "no delta-kernel-rs in duckdb-delta's CMake" >&2; exit 1; }
+  jq --arg o "${kernel_repo%%/*}" --arg r "${kernel_repo##*/}" --arg t "$kernel_tag" \
+    --arg h "$(prefetch "$kernel_repo" "$kernel_tag")" \
+    '.delta.kernel = {owner: $o, repo: $r, rev: $t, hash: $h}' "$work/delta.json" >"$work/delta.json.new"
+  mv "$work/delta.json.new" "$work/delta.json"
+  echo "pinned delta-kernel-rs $kernel_tag" >&2
+else
+  echo "skip delta-kernel-rs: $tag has no delta extension" >&2
+fi
 
 jq -S -s 'add' "$work"/*.json >"$out"
-echo "wrote $out ($(jq 'length' "$out") extensions, duckdb $tag)" >&2
+echo "pins.json: $(jq 'length' "$out") extensions, duckdb $tag" >&2
 
 # Rust extensions build offline from their Cargo.lock. It is copied in here so
 # that evaluating the flake needs no network and no import from derivation.
-locks="$dir/rust"
-mkdir -p "$locks"
+locks="$stage/rust"
+# A repository that does not commit its Cargo.lock (delta-kernel-rs does not, in
+# the tags DuckDB 1.x pins) gets one resolved here against crates.io, with the
+# same cargo as relock_vortex. The result is as pinned as a committed one.
+generate_lock() { # name  owner/repo  rev
+  local src="$work/lockgen-$1"
+  cp -R "$(nix flake prefetch "github:$2/$3" --json | jq -r .storePath)" "$src"
+  chmod -R u+w "$src"
+  (cd "$src" && nix shell nixpkgs#cargo nixpkgs#rustc -c cargo generate-lockfile >&2)
+  cp "$src/Cargo.lock" "$locks/$1.Cargo.lock"
+}
 vendor_lock() { # name  jq path of its source in pins.json  Cargo.lock path in that repo
-  local repo rev
+  local repo rev err="$work/vendor_lock.err" how=
   repo="$(jq -r "$2 | \"\(.owner)/\(.repo)\"" "$out")"
   rev="$(jq -r "$2.rev" "$out")"
-  raw "repos/$repo/contents/$3?ref=$rev" >"$locks/$1.Cargo.lock"
-  echo "vendored $1.Cargo.lock ($(grep -c '^\[\[package\]\]' "$locks/$1.Cargo.lock") crates)" >&2
+  if ! raw "repos/$repo/contents/$3?ref=$rev" >"$locks/$1.Cargo.lock" 2>"$err"; then
+    # only a missing file is not an error
+    grep -q 'HTTP 404' "$err" || { cat "$err" >&2; return 1; }
+    generate_lock "$1" "$repo" "$rev"
+    how=", generated: $repo@$rev has no $3"
+  fi
+  echo "vendored $1.Cargo.lock ($(grep -c '^\[\[package\]\]' "$locks/$1.Cargo.lock") crates$how)" >&2
 }
-vendor_lock lance .lance Cargo.lock
-vendor_lock delta .delta.kernel Cargo.lock
+if pinned lance; then
+  vendor_lock lance .lance Cargo.lock
+else
+  echo "skip lance.Cargo.lock: $tag has no lance extension" >&2
+fi
+if pinned delta; then
+  vendor_lock delta .delta.kernel Cargo.lock
+fi
+
 # The Cargo.lock that duckdb-vortex commits does not match its own Cargo.toml: it
 # pins an older vortex revision than the manifest asks for. Upstream never
 # notices, since its CMake runs a plain `cargo build`, which re-resolves online.
@@ -196,7 +255,11 @@ relock_vortex() {
   cp "$dir/Cargo.lock" "$locks/vortex.Cargo.lock"
   echo "vendored vortex.Cargo.lock, re-resolved ($(grep -c '^\[\[package\]\]' "$locks/vortex.Cargo.lock") crates)" >&2
 }
-relock_vortex
+if pinned vortex; then
+  relock_vortex
+else
+  echo "skip vortex.Cargo.lock: vortex is not pinned for $tag" >&2
+fi
 
 # Some of vortex's Rust dependencies come from git. Nix wants a hash for each
 # `source` string in the lock, of the checkout as fetchgit makes it: with submodules
@@ -224,5 +287,19 @@ git_hashes() { # Cargo.lock -> JSON object of lock source string to hash
   done < <(grep -o 'source = "git+[^"]*"' "$lock" | sed 's/^source = "//; s/"$//' | sort -u)
   echo "$json"
 }
-jq -S --argjson hashes "$(git_hashes "$locks/vortex.Cargo.lock")" '.vortex.gitHashes = $hashes' "$out" >"$work/pins.json"
-mv "$work/pins.json" "$out"
+if pinned vortex; then
+  jq -S --argjson hashes "$(git_hashes "$locks/vortex.Cargo.lock")" '.vortex.gitHashes = $hashes' "$out" >"$work/pins.json"
+  mv "$work/pins.json" "$out"
+fi
+
+# A failed command substitution in an argument does not stop the script, and would
+# leave an empty hash behind.
+jq -e -s '[.. | objects | select(has("hash")) | .hash | select(startswith("sha256-") | not)] | length == 0' \
+  "$versions" "$out" >/dev/null || { echo "a hash is missing from version.json or pins.json, nothing written" >&2; exit 1; }
+
+# Everything worked: replace the previous state of the release with the new one,
+# including the lock files of extensions it no longer pins.
+mkdir -p "$dir"
+rm -rf "$dir/version.json" "$dir/pins.json" "$dir/rust"
+cp -R "$stage"/. "$dir"/
+echo "wrote $dir (duckdb $tag, $(jq 'length' "$out") extensions, $(find "$locks" -type f | wc -l) Cargo.lock files)" >&2
