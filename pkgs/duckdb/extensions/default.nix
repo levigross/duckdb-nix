@@ -10,6 +10,7 @@
   pins,
   rustLocks,
   duckdbRustPlatform,
+  avro-c,
   aws-sdk-cpp,
   # older nixpkgs have none; default.nix leaves the extension out then
   azure-sdk-for-cpp ? null,
@@ -86,11 +87,81 @@ let
     inherit (pins.vortex) gitHashes;
   };
 
+  release = lib.removePrefix "v" duckdbVersion;
+
+  # the library mysql_scanner asks vcpkg for: the MySQL client until 1.5, MariaDB's from then on
+  mysqlPackage = if lib.versionOlder release "1.5" then "libmysql" else "libmariadb";
+
+  # What differs from the definitions below for a DuckDB older than the one they
+  # were written for (2.0), which pins older sources.
+  versionOverrides =
+    lib.optionalAttrs (lib.versionOlder release "2") {
+      # Until 2.0 avro-c is a library the extension finds: vcpkg builds it. Here
+      # nixpkgs' is used, as shared libraries.
+      avro = {
+        buildInputs = [
+          avro-c
+          jansson
+          snappy
+          xz
+          zlib
+        ];
+        postPatch = ''
+          substituteInPlace CMakeLists.txt \
+            --replace-fail "find_library(AVRO_LIBRARY libavro.a REQUIRED)" "find_library(AVRO_LIBRARY avro REQUIRED)" \
+            --replace-fail "find_library(JANSSON_LIBRARY libjansson.a REQUIRED)" "find_library(JANSSON_LIBRARY jansson REQUIRED)" \
+            --replace-fail "find_library(LZMA_LIBRARY liblzma.a REQUIRED)" "find_library(LZMA_LIBRARY lzma REQUIRED)" \
+            --replace-fail "find_library(ZLIB_LIBRARY libz.a REQUIRED)" "find_library(ZLIB_LIBRARY z REQUIRED)"
+        '';
+      };
+    }
+    // lib.optionalAttrs (lib.versionOlder release "1.5") {
+      # These sources still use the file handle interface of GDAL before 3.13, which
+      # the definition below adapts newer sources away from, so only older GDAL builds them.
+      spatial = {
+        unsupported =
+          if lib.versionAtLeast gdal.version "3.13" then
+            "its sources need a GDAL older than 3.13, and this nixpkgs has ${gdal.version}"
+          else
+            null;
+        testSkips = [ ];
+        postPatch = ''
+          substituteInPlace CMakeLists.txt \
+            --replace-fail "set(ZLIB_USE_STATIC_LIBS ON)" "set(ZLIB_USE_STATIC_LIBS OFF)" \
+            --replace-fail "set(OPENSSL_USE_STATIC_LIBS ON)" "set(OPENSSL_USE_STATIC_LIBS OFF)" \
+            --replace-fail "find_package(unofficial-sqlite3 CONFIG REQUIRED)" "find_package(SQLite3 REQUIRED)" \
+            --replace-fail "unofficial::sqlite3::sqlite3" "SQLite::SQLite3"
+
+          substituteInPlace src/spatial/modules/gdal/gdal_module.cpp \
+            --replace-fail "OGRRegisterAllInternal();" "GDALAllRegister();"
+
+          # nixpkgs sqlite is built without SQLITE_USE_URI, so the embedded proj.db URI needs the flag
+          substituteInPlace src/spatial/modules/proj/proj_module.cpp \
+            --replace-fail "SQLITE_OPEN_READONLY, \"memvfs\")" "SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, \"memvfs\")"
+
+          # the bundled proj.db is from an older proj, embed the one matching the linked proj instead
+          python3 - ${proj}/share/proj/proj.db src/spatial/modules/proj/proj_db.c <<'PY'
+          import sys
+
+          data = open(sys.argv[1], "rb").read()
+          with open(sys.argv[2], "w") as out:
+              out.write("unsigned char proj_db[] = {\n")
+              for i in range(0, len(data), 12):
+                  out.write("  " + ", ".join(f"0x{b:02x}" for b in data[i : i + 12]) + ",\n")
+              out.write(f"}};\nunsigned int proj_db_len = {len(data)};\n")
+          PY
+
+          substituteInPlace src/spatial/util/math.cpp \
+            --replace-fail "#if SPATIAL_USE_GEOS" "#if 0"
+        '';
+      };
+    };
+
   mkExtension = import ../mk-extension.nix { inherit lib; };
 
   # An extension at the commit that DuckDB's release (or the community
   # descriptor) pins, with its submodules and patches.
-  mkPinnedExtension =
+  mkPinned =
     name:
     {
       # tools postPatch needs
@@ -152,6 +223,27 @@ let
       # in duckdb/community-extensions rather than in DuckDB's own configuration
       community = pin.community or null;
     };
+
+  # Every extension below is defined for every DuckDB version, but a version only
+  # has the pins of the extensions it configures. The others say so when asked
+  # for, instead of failing to evaluate.
+  mkPinnedExtension =
+    name: args:
+    if pins ? ${name} then
+      mkPinned name (args // versionOverrides.${name} or { })
+    else
+      mkExtension {
+        inherit name;
+        src = null;
+        version = "none";
+        unsupported = "DuckDB ${duckdbVersion} has no pin for it: it is not part of that release, or not packaged for it yet";
+      }
+      // {
+        owner = null;
+        repo = null;
+        rev = null;
+        community = null;
+      };
 in
 lib.mapAttrs mkPinnedExtension {
   avro = {
@@ -370,7 +462,7 @@ lib.mapAttrs mkPinnedExtension {
       # subdirectory, so link it by -L and -l: the compiler wrapper then adds
       # that directory to the RPATH, which a full path to the file would not.
       substituteInPlace CMakeLists.txt \
-        --replace-fail "find_package(libmariadb REQUIRED)" "set(MYSQL_LIBRARIES -L${mariadb-connector-c}/lib/mariadb -lmariadb)"
+        --replace-fail "find_package(${mysqlPackage} REQUIRED)" "set(MYSQL_LIBRARIES -L${mariadb-connector-c}/lib/mariadb -lmariadb)"
       sed -i 's|[$]{CMAKE_BINARY_DIR}/vcpkg_installed/[$]{VCPKG_TARGET_TRIPLET}/include/mysql|${mariadb-connector-c.dev}/include/mysql|' CMakeLists.txt
       ! grep -q vcpkg_installed CMakeLists.txt
 

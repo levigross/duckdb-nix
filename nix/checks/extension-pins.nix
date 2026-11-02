@@ -8,10 +8,18 @@
 let
   inherit (pkgs) lib duckdb;
 
+  pinned = lib.filterAttrs (_: ext: ext.rev != null) duckdb.extensions;
+
+  # Defined here but with no pin for this DuckDB version: the release does not
+  # configure them, or they are not packaged for it yet. They are left out of
+  # both sides, so the check still fails for an extension that is configured and
+  # not defined at all.
+  unpinned = lib.attrNames (lib.filterAttrs (_: ext: ext.rev == null) duckdb.extensions);
+
   packaged = lib.mapAttrs (_: ext: {
     url = "https://github.com/${ext.owner}/${ext.repo}";
     inherit (ext) rev;
-  }) duckdb.extensions;
+  }) pinned;
 
   descriptor =
     ext:
@@ -39,7 +47,9 @@ pkgs.runCommand "duckdb-extension-pins"
     '') (lib.filter (ext: ext.community != null) (lib.attrValues duckdb.extensions))}
 
     # test_utils is DuckDB's own backwards compatibility test, not an extension to ship
-    jq -S -s 'add | del(.test_utils)' declared.jsonl > declared.json
+    jq -S -s 'add | del(.test_utils${
+      lib.concatMapStrings (name: ", .${name}") unpinned
+    })' declared.jsonl > declared.json
     jq -S . ${pkgs.writeText "packaged-pins.json" (builtins.toJSON packaged)} > packaged.json
 
     diff --unified --label "declared by the sources" --label packaged declared.json packaged.json
