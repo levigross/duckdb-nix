@@ -172,7 +172,7 @@ gets the one in the `flake.lock` of its `duckdb-nix` input.
 
 | DuckDB | ships in | pinned extensions | status |
 |---|---|---|---|
-| 2.0.0 | | 29 | built with DuckDB's own test suite and every check on nixpkgs unstable and 26.05 |
+| 2.0.0 | | 29 | built with DuckDB's own test suite and every check on all three nixpkgs |
 | 1.5.2 | nixpkgs 26.05 | 20 | new: not yet built through (see below) |
 | 1.4.3 | nixpkgs 25.11 | 18 | new: not yet built through (see below) |
 
