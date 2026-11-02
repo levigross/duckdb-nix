@@ -96,7 +96,7 @@ duckdb.withExtensions (e: [ e.httpfs e.spatial ])
 | overlay | `pkgs.duckdbVersions."1.4"`; `pkgs.duckdb` is still 2.0.0 |
 | command line | `nix shell github:levigross/duckdb-nix#duckdb-1_4-httpfs`, or `#previous-duckdb-1_4-all` to build it with nixpkgs 25.11 (`#stable-duckdb-1_5-all` for 1.5 with 26.05) |
 | Rust or C++ | `lib.getLib duckdb` and `lib.getDev duckdb` of the one you chose, as in [From Rust or C++](#from-rust-or-c); the `duckdb` crate must be the one for that DuckDB |
-| Python | `(duckdb.withExtensions (e: [ e.httpfs ])).pythonModule python3Packages`, or the package `python3-duckdb-all` (2.0): the module with the extensions linked in. For 1.4 and 1.5 it [does not import yet](#python-module) |
+| Python | `(duckdb.withExtensions (e: [ e.httpfs ])).pythonModule python3Packages`, or the package `python3-duckdb-all` (2.0): the module with the extensions linked in. The module of 1.4 [does not build yet](#python-module) |
 
 `map (e: e.name) duckdb.linkableExtensions` lists what that version can link with your
 nixpkgs. An extension its release does not have fails with a message that says so, not
@@ -174,8 +174,8 @@ gets the one in the `flake.lock` of its `duckdb-nix` input.
 | DuckDB | ships in | linked extensions | `duckdb` crate | Python module |
 |---|---|---|---|---|
 | 2.0.0 | | 28 | `=1.20000.1` | `python3-duckdb` |
-| 1.5.2 | nixpkgs 26.05 | 24 | `=1.10502.0` | `python3-duckdb-1_5` (does not import yet) |
-| 1.4.3 | nixpkgs 25.11 | 22, and duckpgq to load | `=1.4.3` | `python3-duckdb-1_4` (does not import yet) |
+| 1.5.2 | nixpkgs 26.05 | 24 | `=1.10502.0` | `python3-duckdb-1_5` |
+| 1.4.3 | nixpkgs 25.11 | 22, and duckpgq to load | `=1.4.3` | `python3-duckdb-1_4` (does not build yet) |
 
 What a version has is what its release has. `scripts/availability.sh` lists, for every
 version and nixpkgs, each extension that cannot be had and why; it prints this:
@@ -243,20 +243,25 @@ shown to be flaky yet; the pair is being built again.
 
 #### Python module
 
-- **2.0.0** builds on unstable and `import duckdb` shows all 28 extensions loaded. It has
-  not been built on 26.05 or 25.11, where `nanobind` 3 comes from `pkgs/duckdb/nanobind.nix`.
-- **1.4.3** compiles, and `import duckdb` fails: `cannot allocate memory in static TLS
-  block`: the thread-local storage of the module, of the initial-exec kind, does not fit in
-  what glibc sets aside when it loads it. The cause is not known. The jemalloc extension,
-  which DuckDB's CMake adds on Linux, is linked in and is the first suspect; skipping it
-  (`SKIP_EXTENSIONS`) has not been tried yet.
-- **1.5.2** compiles, and `import duckdb` fails with an undefined symbol, the vtable of
-  `LanceExtension`: the module links only the extensions that `BUILD_EXTENSIONS` names,
-  and the extensions of this flake come in through `DUCKDB_EXTENSION_CONFIGS`, so they are
-  compiled but not linked. Not fixed yet.
+A module is built and checked by importing it and by checking that every extension it was
+given is loaded (`duckdb_extensions()`). The test suite of duckdb-python is not run.
 
-The packages `python3-duckdb-1_4*` and `python3-duckdb-1_5*` exist so the failures can
-be reproduced.
+- **2.0.0** builds on unstable, and `import duckdb` shows all 28 extensions loaded. It has
+  not been built on 26.05 or 25.11, where `nanobind` 3 comes from `pkgs/duckdb/nanobind.nix`.
+- **1.5.2** builds on 26.05, and `import duckdb` shows all 24 extensions loaded. Its CMake
+  links only the extensions that `BUILD_EXTENSIONS` names, and the extensions of this flake
+  come in through `DUCKDB_EXTENSION_CONFIGS`, so the module links them by a loop that is
+  given their names. It is built without jemalloc, which DuckDB's CMake adds on Linux.
+  It has not been built on 25.11 or unstable.
+- **1.4.3** builds but does not import on 25.11: `cannot allocate memory in static TLS
+  block`. The module and the libraries it needs use more thread-local storage of the
+  initial-exec kind than glibc 2.40 sets aside when it loads a module. It is not jemalloc:
+  the module without it fails the same way. Loaded by hand, the built module imports once
+  the reserve is larger, with `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=16384` in
+  the environment (4096 was not enough). The package's own checks do not set it, so the
+  package does not build.
+
+The package `python3-duckdb-1_4*` exists so the failure can be reproduced.
 
 The `duckdb` crate that goes with a release is the one named in the table. For 1.5.2 and
 2.0.0 it is numbered `1.<major * 10000 + minor * 100 + patch>.<n>`; `update.sh` finds it.
@@ -384,8 +389,8 @@ an extension is absent, and C++ tests that cannot run with `postgres_scanner` or
   aarch64-darwin are untried.
 - Size: `libduckdb.so` with all 28 is 911 MB, mostly lance's DataFusion stack. Link
   only what you use.
-- The Python module of 1.4 and 1.5 ([above](#python-module)), and the module of 2.0 on
-  26.05 and 25.11.
+- The Python module of 1.4 ([above](#python-module)), and the modules of 2.0 and 1.5 on
+  the nixpkgs they have not been built on, and the test suite of duckdb-python.
 
 ## License
 
