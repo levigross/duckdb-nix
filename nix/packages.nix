@@ -11,6 +11,17 @@ _:
     }:
     let
 
+      # the same build without its test suite, for iterating
+      withoutTests =
+        all:
+        all.overrideAttrs {
+          doInstallCheck = false;
+          ninjaFlags = [
+            "-k"
+            "0"
+          ];
+        };
+
       # DuckDB of one version: by itself, with every extension this nixpkgs can
       # link, and with each of them alone. `tag` is "" for the default version.
       packagesOfVersion =
@@ -28,6 +39,9 @@ _:
           "duckdb${tag}-all" = all;
 
           # Development only: stop after CMake configures
+          # build everything and keep going past failures, to see every error
+          "dev-keep-going${tag}" = withoutTests all;
+
           "dev-configure${tag}" = all.overrideAttrs {
             outputs = [ "out" ];
             dontBuild = true;
@@ -43,15 +57,6 @@ _:
           inherit (nixpkgs) duckdb;
           all = duckdb.withExtensions (_: duckdb.linkableExtensions);
 
-          # the same build without its test suite, for iterating
-          withoutTests = all.overrideAttrs {
-            doInstallCheck = false;
-            ninjaFlags = [
-              "-k"
-              "0"
-            ];
-          };
-
           # the other lines of DuckDB, which are pinned as well as the default one
           otherLines = lib.filterAttrs (
             line: other: builtins.match "[0-9]+\\.[0-9]+" line != null && other.version != duckdb.version
@@ -65,8 +70,6 @@ _:
           # Development only, for finding build errors quickly, so they skip the
           # test suite that the real packages run.
 
-          # build everything and keep going past failures, to see every error
-          dev-keep-going = withoutTests;
           # a small set that reproduces the extension-related test failures, for
           # `nix develop` and a persistent build directory
           dev-test-shell = duckdb.withExtensions (e: [
@@ -76,12 +79,12 @@ _:
           # the checks against the build without tests
           dev-check = import ./checks/all-extensions.nix {
             pkgs = nixpkgs;
-            duckdb = withoutTests;
+            duckdb = withoutTests all;
             extensions = duckdb.linkableExtensions;
           };
           dev-rust-check = import ./checks/rust-consumer.nix {
             pkgs = nixpkgs;
-            duckdb = withoutTests;
+            duckdb = withoutTests all;
             extensions = duckdb.linkableExtensions;
           };
         };
