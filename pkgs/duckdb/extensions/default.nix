@@ -14,8 +14,8 @@
   unavailable ? { },
   duckdbRustPlatform,
   aws-sdk-cpp,
-  # older nixpkgs have none; default.nix leaves the extension out then
-  azure-sdk-for-cpp ? null,
+  # older nixpkgs have none: a copy of what the extension needs
+  azure-sdk-for-cpp ? callPackage ../azure-sdk-for-cpp { },
   bzip2,
   croaring,
   curl,
@@ -27,6 +27,10 @@
   libpq,
   libxml2,
   mariadb-connector-c,
+  # MySQL 8.4 is the one server that all the nixpkgs have; its client library is what the
+  # sources of DuckDB 1.4 need
+  mysql84 ? null,
+  lz4,
   miniz,
   minizip-ng,
   openssl,
@@ -111,13 +115,23 @@ let
       ];
   # the library the avro extension finds before 2.0 (see avro-c.nix)
   avroC = callPackage ./avro-c.nix { src = fetchPin pins.avro.avroC; };
-  vortexFfi = callPackage ./vortex.nix {
-    rustPlatform = duckdbRustPlatform;
-    src = fetchPin pins.vortex;
-    lockFile = rustLocks + "/vortex.Cargo.lock";
-    inherit duckdbSrc duckdbVersion;
-    inherit (pins.vortex) gitHashes;
-  };
+  vortexFfi =
+    if pins.vortex ? submodules then
+      # before 2.0 the crate is part of the vortex repository, the extension's submodule
+      callPackage ./vortex-monorepo.nix {
+        rustPlatform = duckdbRustPlatform;
+        src = fetchPin pins.vortex.submodules.vortex;
+        lockFile = rustLocks + "/vortex.Cargo.lock";
+        inherit duckdbSrc duckdbVersion;
+      }
+    else
+      callPackage ./vortex.nix {
+        rustPlatform = duckdbRustPlatform;
+        src = fetchPin pins.vortex;
+        lockFile = rustLocks + "/vortex.Cargo.lock";
+        inherit duckdbSrc duckdbVersion;
+        inherit (pins.vortex) gitHashes;
+      };
 
   release = lib.removePrefix "v" duckdbVersion;
 
@@ -128,6 +142,39 @@ let
   # were written for (2.0), which pins older sources.
   versionOverrides =
     lib.optionalAttrs (lib.versionOlder release "2") {
+      # Before 2.0 Corrosion builds the Rust crate of the vortex submodule. The library is built
+      # separately (vortex-monorepo.nix) and stands in for the target Corrosion would create,
+      # and the header cbindgen generated from the crate is on the include path.
+      vortex = {
+        cmakeFlags = [ (lib.cmakeFeature "VORTEX_FFI_INCLUDE_DIR" "${vortexFfi}/include") ];
+        postPatch = ''
+          sed -i '/^include(FetchContent)/,/^FetchContent_MakeAvailable(Corrosion)/d' CMakeLists.txt
+          sed -i '/^corrosion_import_crate(/,/^)/d' CMakeLists.txt
+          sed -i 's|^include_directories(src/include vortex/vortex-duckdb/include)|include_directories(src/include ''${VORTEX_FFI_INCLUDE_DIR})|' CMakeLists.txt
+          cat > ffi.cmake <<'EOF2'
+          add_library(vortex_duckdb-static STATIC IMPORTED GLOBAL)
+          set_target_properties(vortex_duckdb-static PROPERTIES
+            IMPORTED_LOCATION "''${VORTEX_FFI_LIBRARY}"
+            INTERFACE_LINK_LIBRARIES "m;dl;pthread")
+
+          EOF2
+          sed -i '/^include_directories(src\/include/e cat ffi.cmake' CMakeLists.txt
+          rm ffi.cmake
+          ! grep -q -E 'corrosion|Corrosion|cargo' CMakeLists.txt
+          grep -q 'VORTEX_FFI_INCLUDE_DIR' CMakeLists.txt
+        '';
+      };
+
+      # Before 2.0 psql is a small extension that adds its syntax to every connection as
+      # soon as it is loaded: there is no grammar to switch on, and none of the C++ tests
+      # of the grammars that its 2.0 skips are in these suites.
+      psql = {
+        smoke.sql = [
+          "FROM range(10) |> WHERE range >= 5 |> SELECT CASE WHEN count(*) = 5 THEN 1 ELSE error('psql pipeline') END"
+        ];
+        testSkips = [ ];
+      };
+
       # Until 2.0 the extension builds the libpq of PostgreSQL itself. It downloads the
       # source, which CMake skips when the file is there and has the hash it expects,
       # and configures it. The link to the system libpq below does not apply.
@@ -243,58 +290,152 @@ let
       '';
 
       # The 1.4 sources use the API of MySQL's own client library (my_bool is gone from it,
-      # but SSL_MODE_PREFERRED and mysql_com.h are not in MariaDB's), which nixpkgs only
-      # has as part of mysql80.
-      mysql_scanner.unsupported = "its sources need MySQL's client library, which nixpkgs only ships inside the server; MariaDB's is not the same API";
-
-      # These sources still use the file handle interface of GDAL before 3.13, which
-      # the definition below adapts newer sources away from, so only older GDAL builds them.
-      spatial = {
+      # but SSL_MODE_PREFERRED and mysql_com.h are not in MariaDB's), which nixpkgs has only
+      # as part of the server: its static library is in a separate output.
+      mysql_scanner = {
         unsupported =
-          if lib.versionAtLeast gdal.version "3.13" then
-            "its sources need a GDAL older than 3.13, and this nixpkgs has ${gdal.version}"
+          if mysql84 == null then
+            "this nixpkgs has no mysql84, whose client library the sources need"
           else
             null;
-        testSkips = [ ];
+        buildInputs = [
+          mysql84
+          mysql84.static
+          lz4
+          openssl
+          zlib
+          zstd
+        ];
         postPatch = ''
           substituteInPlace CMakeLists.txt \
-            --replace-fail "set(ZLIB_USE_STATIC_LIBS ON)" "set(ZLIB_USE_STATIC_LIBS OFF)" \
-            --replace-fail "set(OPENSSL_USE_STATIC_LIBS ON)" "set(OPENSSL_USE_STATIC_LIBS OFF)" \
-            --replace-fail "find_package(unofficial-sqlite3 CONFIG REQUIRED)" "find_package(SQLite3 REQUIRED)" \
-            --replace-fail "unofficial::sqlite3::sqlite3" "SQLite::SQLite3"
+            --replace-fail "find_package(libmysql REQUIRED)" "set(MYSQL_LIBRARIES ${mysql84.static}/lib/libmysqlclient.a ssl crypto z zstd lz4 pthread dl m resolv stdc++)"
+          sed -i 's|[$]{CMAKE_BINARY_DIR}/vcpkg_installed/[$]{VCPKG_TARGET_TRIPLET}/include/mysql|${mysql84}/include/mysql|' CMakeLists.txt
+          ! grep -q vcpkg_installed CMakeLists.txt
 
-          substituteInPlace src/spatial/modules/gdal/gdal_module.cpp \
-            --replace-fail "OGRRegisterAllInternal();" "GDALAllRegister();" \
-            --replace-fail "int Eof() override {" "void ClearErr() override {
-          }
+          # Upstream only builds the loadable extension: add the static library, as for 1.5 and later
+          cat >> CMakeLists.txt <<'EOF'
 
-          int Error() override {
-            return 0;
-          }
-
-          int Eof() override {"
-
-          # nixpkgs sqlite is built without SQLITE_USE_URI, so the embedded proj.db URI needs the flag
-          substituteInPlace src/spatial/modules/proj/proj_module.cpp \
-            --replace-fail "SQLITE_OPEN_READONLY, \"memvfs\")" "SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, \"memvfs\")"
-
-          # the bundled proj.db is from an older proj, embed the one matching the linked proj instead
-          python3 - ${proj}/share/proj/proj.db src/spatial/modules/proj/proj_db.c <<'PY'
-          import sys
-
-          data = open(sys.argv[1], "rb").read()
-          with open(sys.argv[2], "w") as out:
-              out.write("unsigned char proj_db[] = {\n")
-              for i in range(0, len(data), 12):
-                  out.write("  " + ", ".join(f"0x{b:02x}" for b in data[i : i + 12]) + ",\n")
-              out.write(f"}};\nunsigned int proj_db_len = {len(data)};\n")
-          PY
-
-          substituteInPlace src/spatial/util/math.cpp \
-            --replace-fail "#if SPATIAL_USE_GEOS" "#if 0"
+          add_library(''${EXTENSION_NAME} STATIC ''${ALL_OBJECT_FILES})
+          target_link_libraries(''${EXTENSION_NAME} ''${MYSQL_LIBRARIES})
+          install(
+            TARGETS ''${EXTENSION_NAME}
+            EXPORT "''${DUCKDB_EXPORT_SET}"
+            LIBRARY DESTINATION "''${INSTALL_LIB_DIR}"
+            ARCHIVE DESTINATION "''${INSTALL_LIB_DIR}")
+          EOF
         '';
       };
+
+      # a test of 2.0 that the older releases do not have
+      spatial.testSkips = [ ];
     };
+
+  # spatial's file handle and file system for GDAL, which changed its interface twice.
+  # GDAL 3.12 returns a VSIVirtualHandleUniquePtr from a file system's Open, takes it in
+  # VSICreateCachedFile, and makes IsLocal const. GDAL 3.13 has a read or a write take a
+  # byte count, and installs a file system as a shared pointer. The sources of 2.0 are
+  # written for 3.12 and those of 1.4 and 1.5 for 3.11, which also lack two functions that
+  # every GDAL has as pure virtual.
+  gdalGeneration =
+    if lib.versionAtLeast gdal.version "3.13" then
+      13
+    else if lib.versionAtLeast gdal.version "3.12" then
+      12
+    else
+      11;
+  spatialGdalEdits =
+    let
+      before2 = lib.versionOlder release "2";
+      before15 = lib.versionOlder release "1.5";
+      edit = from: to: ''--replace-fail "${from}" "${to}"'';
+      # the new signature calls the old one, which stays under its name
+      overload =
+        {
+          name,
+          qual,
+          buf,
+          size,
+          count,
+        }:
+        edit "size_t ${name}(${qual}void *${buf}, size_t ${size}, size_t ${count}) override {" (
+          lib.concatStringsSep "\n" [
+            "size_t ${name}(${qual}void *${buf}, size_t nBytes) override {"
+            "    return ${name}(${buf}, 1, nBytes);"
+            "  }"
+            ""
+            "  size_t ${name}(${qual}void *${buf}, size_t ${size}, size_t ${count}) {"
+          ]
+        );
+      names =
+        if before15 then
+          {
+            buf = "pBuffer";
+            size = "nSize";
+            count = "nCount";
+            path = "prefixed_file_name";
+          }
+        else
+          {
+            buf = "buffer";
+            size = "size";
+            count = "count";
+            path = "gdal_file_path";
+          };
+      handler = if before15 then "fs_handler" else "fs_handler.get()";
+    in
+    lib.concatStringsSep " \\\n  " (
+      [ (edit "OGRRegisterAllInternal();" "GDALAllRegister();") ]
+      ++ lib.optional before2 (
+        edit "int Eof() override {" (
+          lib.concatStringsSep "\n" [
+            "void ClearErr() override {"
+            "  }"
+            ""
+            "  int Error() override {"
+            "    return 0;"
+            "  }"
+            ""
+            "  int Eof() override {"
+          ]
+        )
+      )
+      # the sources of 1.5 override the rename of older GDAL, which has a progress function now
+      ++ lib.optional (before2 && !before15) (
+        edit "int Rename(const char *oldpath, const char *newpath) override {" "int Rename(const char *oldpath, const char *newpath, GDALProgressFunc, void *) override {"
+      )
+      # 3.11 sources with the file system of 3.12 or later
+      ++ lib.optionals (before2 && gdalGeneration >= 12) (
+        [
+          (edit "VSIVirtualHandle *Open(" "VSIVirtualHandleUniquePtr Open(")
+          (edit "return new DuckDBFileHandle(std::move(file));" "return VSIVirtualHandleUniquePtr(new DuckDBFileHandle(std::move(file)));")
+          (edit "bool IsLocal(const char *${names.path}) override {" "bool IsLocal(const char *${names.path}) const override {")
+        ]
+        ++ lib.optionals before15 [
+          (edit "const char *StripPrefix(const char *pszFilename) {" "const char *StripPrefix(const char *pszFilename) const {")
+          # the cached file of a remote one is made by a function that still returns the raw pointer
+          (edit "return VSICreateCachedFile(new DuckDBFileHandle(std::move(file)));" "return VSIVirtualHandleUniquePtr(VSICreateCachedFile(new DuckDBFileHandle(std::move(file))));")
+        ]
+      )
+      # 3.12 sources with the file system of 3.11
+      ++ lib.optionals (!before2 && gdalGeneration < 12) [
+        (edit "VSIVirtualHandleUniquePtr Open(" "VSIVirtualHandle *Open(")
+        (edit "return VSIVirtualHandleUniquePtr(new DuckDBFileHandle(std::move(file)));" "return new DuckDBFileHandle(std::move(file));")
+        (edit "bool IsLocal(const char *gdal_file_path) const override {" "bool IsLocal(const char *gdal_file_path) override {")
+      ]
+      ++ lib.optionals (gdalGeneration >= 13) [
+        (edit "VSIFileManager::InstallHandler(client_prefix, ${handler});" "VSIFileManager::InstallHandler(client_prefix, std::shared_ptr<VSIFilesystemHandler>(${handler}, [](VSIFilesystemHandler *) {}));")
+        (overload {
+          name = "Read";
+          qual = "";
+          inherit (names) buf size count;
+        })
+        (overload {
+          name = "Write";
+          qual = "const ";
+          inherit (names) buf size count;
+        })
+      ]
+    );
 
   mkExtension = import ../mk-extension.nix { inherit lib; };
 
@@ -424,7 +565,6 @@ lib.mapAttrs mkPinnedExtension {
   };
 
   azure = {
-    unsupported = if azure-sdk-for-cpp == null then "this nixpkgs has no azure-sdk-for-cpp" else null;
     buildInputs = [
       azure-sdk-for-cpp.core
       azure-sdk-for-cpp.identity
@@ -787,12 +927,6 @@ lib.mapAttrs mkPinnedExtension {
   };
 
   spatial = {
-    # the sources use the file handle interface of GDAL 3.13
-    unsupported =
-      if lib.versionOlder gdal.version "3.13" then
-        "its sources need GDAL 3.13 or newer, and this nixpkgs has ${gdal.version}"
-      else
-        null;
     testSkips = [
       {
         reason = "expects EPSG:4326 to be an unknown coordinate system, which spatial's coordinate system database makes known";
@@ -818,18 +952,7 @@ lib.mapAttrs mkPinnedExtension {
         --replace-fail "unofficial::sqlite3::sqlite3" "SQLite::SQLite3"
 
       substituteInPlace src/spatial/modules/gdal/gdal_module.cpp \
-        --replace-fail "OGRRegisterAllInternal();" "GDALAllRegister();" \
-        --replace-fail "VSIFileManager::InstallHandler(client_prefix, fs_handler.get());" "VSIFileManager::InstallHandler(client_prefix, std::shared_ptr<VSIFilesystemHandler>(fs_handler.get(), [](VSIFilesystemHandler *) {}));" \
-        --replace-fail "size_t Read(void *buffer, size_t size, size_t count) override {" "size_t Read(void *buffer, size_t nBytes) override {
-          return Read(buffer, 1, nBytes);
-        }
-
-        size_t Read(void *buffer, size_t size, size_t count) {" \
-        --replace-fail "size_t Write(const void *buffer, size_t size, size_t count) override {" "size_t Write(const void *buffer, size_t nBytes) override {
-          return Write(buffer, 1, nBytes);
-        }
-
-        size_t Write(const void *buffer, size_t size, size_t count) {"
+        ${spatialGdalEdits}
 
       # nixpkgs sqlite is built without SQLITE_USE_URI, so the embedded proj.db URI needs the flag
       substituteInPlace src/spatial/modules/proj/proj_module.cpp \
