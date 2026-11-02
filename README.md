@@ -187,20 +187,8 @@ version and nixpkgs, each extension that cannot be had and why; it prints this:
   release. `sheetreader` has none for 1.4.3 and `duckpgq` has none for 1.5.2.
 - **duckpgq on 1.4.3** is in the registry, but its sources need the parser of
   `cwida/duckdb-pgq`, a fork of DuckDB, so it cannot be linked into DuckDB. It is
-  offered as a file to load instead, in two forms: `duckpgq`, built here from the
-  sources against the fork, as the registry builds it, and `duckpgq-registry`, the
-  registry's own signed build, pinned by its hash. Both are in `loadableExtensions`:
-
-  ```sql
-  -- duckdb -unsigned, for the one built here
-  LOAD '/nix/store/…-duckdb-duckpgq-loadable-1.4.3/lib/duckpgq.duckdb_extension';
-  ```
-
-  The `duckdb-1_4-duckpgq-loadable` and `duckdb-1_4-duckpgq-registry-loadable`
-  packages build them, and the `loadable-extensions` check loads each into DuckDB 1.4.3,
-  runs the graph queries and expects them to fail without it. The one built here is not
-  signed, so DuckDB loads it only when unsigned extensions are allowed
-  (`duckdb -unsigned`, or `allow_unsigned_extensions` when the database is opened).
+  offered as a file to load instead: see
+  [Graph queries on DuckDB 1.4](#graph-queries-on-duckdb-14-duckpgq).
 - **odbc_scanner** is a C API extension, which can only be loaded at runtime.
 
 What differs in how they are built:
@@ -223,6 +211,84 @@ What differs in how they are built:
 The tests left out are listed in the build log with their reasons; one is the test that
 attaches a database over HTTP, in 1.4 and 1.5, and another is "Test catalog versioning"
 where the vortex of 1.4 is linked in.
+
+### Graph queries on DuckDB 1.4 (duckpgq)
+
+duckpgq adds property graphs and `GRAPH_TABLE … MATCH` queries (SQL/PGQ). On 1.4.3 it is
+not linked in: you load it into the DuckDB 1.4 of this flake, which has everything else.
+It comes in two builds, and each is a package:
+
+| package | what it is | to load it |
+|---|---|---|
+| `duckdb-1_4-duckpgq-registry-loadable` | the registry's own build for 1.4.3, signed, pinned by its hash (not built here) | `duckdb` |
+| `duckdb-1_4-duckpgq-loadable` | built here from the sources, against the fork of DuckDB they need | `duckdb -unsigned` |
+
+DuckDB loads an unsigned extension only when it is told to, with `duckdb -unsigned` or
+`allow_unsigned_extensions` when the database is opened (without it, it says so and
+refuses). For 26.05 and 25.11 the packages have the `stable-` and `previous-` prefixes.
+
+**From the command line**, build the extension, start DuckDB 1.4 and load it:
+
+```sh
+ext=$(nix build --no-link --print-out-paths github:levigross/duckdb-nix#duckdb-1_4-duckpgq-registry-loadable)
+echo "$ext"
+nix run github:levigross/duckdb-nix#duckdb-1_4        # add -unsigned for the one built here
+```
+
+```sql
+LOAD '/nix/store/…-duckdb-duckpgq-registry-1.4.3/lib/duckpgq.duckdb_extension';  -- the path echoed above
+
+CREATE TABLE person AS SELECT * FROM (VALUES (1, 'Ann'), (2, 'Bob'), (3, 'Cy')) t(id, name);
+CREATE TABLE knows AS SELECT * FROM (VALUES (1, 2), (2, 3)) t(a, b);
+CREATE PROPERTY GRAPH g
+  VERTEX TABLES (person)
+  EDGE TABLES (knows SOURCE KEY (a) REFERENCES person (id)
+                     DESTINATION KEY (b) REFERENCES person (id) LABEL knows);
+
+-- who knows whom
+FROM GRAPH_TABLE (g MATCH (x:person)-[k:knows]->(y:person)
+                  COLUMNS (x.name AS from_name, y.name AS to_name));
+
+-- the shortest paths out of Ann, up to three hops
+FROM GRAPH_TABLE (g MATCH p = ANY SHORTEST (x:person)-[k:knows]->{1,3}(y:person)
+                  WHERE x.id = 1
+                  COLUMNS (x.name AS from_name, y.name AS to_name, path_length(p) AS hops));
+```
+
+duckpgq reads the tables while it parses the statement that creates a graph, so the
+tables must exist by then: run the statements one after another, as a script piped into
+the shell does, and not all in one `-c` string (the check runs them as separate commands
+for that reason). The last query returns Ann→Bob in 1 hop and Ann→Cy in 2.
+
+**By name**, with `LOAD duckpgq`, the extension directory of the package is set first:
+
+```sql
+SET extension_directory = '/nix/store/…-duckdb-duckpgq-registry-1.4.3/share/duckdb/extensions';
+LOAD duckpgq;
+```
+
+**From Nix**, the packages are in `loadableExtensions` of the DuckDB of the line, so a
+script or a wrapper can name the file without a store path:
+
+```nix
+let
+  duckdb = (duckdb-nix.lib.duckdbVersions pkgs)."1.4";
+  duckpgq = duckdb.loadableExtensions.duckpgq-registry;   # or .duckpgq, built here
+in
+"${duckpgq}/${duckpgq.path}"    # …/lib/duckpgq.duckdb_extension
+```
+
+How this was checked: the session above runs as written with the extension built here
+(`duckdb -unsigned`), and DuckDB refuses it without `-unsigned`. The
+`loadable-extensions-1_4` check (and `previous-` and `stable-`) loads both builds into
+DuckDB 1.4.3 in the sandbox, runs graph queries and expects them to fail without the
+extension. The command lines above were not run against the registry's build outside that
+check, and the extension has not been loaded from the Python module of 1.4, which does
+not build yet.
+
+duckpgq of the 2.0 line is another matter: it is linked in (`duckdb-duckpgq`), needs no
+`LOAD`, and is switched on with `SET active_grammar_extensions = ['duckpgq']`. 1.5.2 has
+no duckpgq, because the registry published none for it.
 
 ### Status
 
