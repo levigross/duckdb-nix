@@ -11,7 +11,6 @@
   pins,
   rustLocks,
   duckdbRustPlatform,
-  avro-c,
   aws-sdk-cpp,
   # older nixpkgs have none; default.nix leaves the extension out then
   azure-sdk-for-cpp ? null,
@@ -108,6 +107,8 @@ let
         "test-ffi"
         "tracing"
       ];
+  # the library the avro extension finds before 2.0 (see avro-c.nix)
+  avroC = callPackage ./avro-c.nix { src = fetchPin pins.avro.avroC; };
   vortexFfi = callPackage ./vortex.nix {
     rustPlatform = duckdbRustPlatform;
     src = fetchPin pins.vortex;
@@ -137,19 +138,40 @@ let
             }
           } pg.tar.gz
         ''
+        # 1.4 builds the loadable extension only, so the static library is added, as for mysql_scanner
+        + lib.optionalString (lib.versionOlder release "1.5") ''
+
+          cat >> CMakeLists.txt <<'EOF'
+
+          set(EXTENSION_NAME ''${TARGET_NAME}_extension)
+          add_library(''${EXTENSION_NAME} STATIC ''${ALL_OBJECT_FILES} ''${LIBPG_SOURCES_FULLPATH})
+          target_include_directories(
+            ''${EXTENSION_NAME}
+            PRIVATE include postgres/src/include postgres/src/backend
+                    postgres/src/interfaces/libpq ''${OPENSSL_INCLUDE_DIR})
+          install(
+            TARGETS ''${EXTENSION_NAME}
+            EXPORT "''${DUCKDB_EXPORT_SET}"
+            LIBRARY DESTINATION "''${INSTALL_LIB_DIR}"
+            ARCHIVE DESTINATION "''${INSTALL_LIB_DIR}")
+          EOF
+        ''
         + lib.replaceStrings [ " PostgreSQL::PostgreSQL" ] [ "" ] args.postPatch;
       };
+
+      # Before 2.0 the extension is laid out as it was in DuckDB's own tree
+      fts.include = "extension/fts/include";
 
       # The same patch as below, for a CMake whose external project ends at LOG_BUILD
       delta = args: {
         postPatch = lib.replaceStrings [ "LOG_OUTPUT_ON_FAILURE ON)" ] [ "LOG_BUILD ON)" ] args.postPatch;
       };
 
-      # Until 2.0 avro-c is a library the extension finds: vcpkg builds it. Here
-      # nixpkgs' is used, as shared libraries.
+      # Until 2.0 avro-c is a library the extension finds: vcpkg builds it, from DuckDB's
+      # fork (see avro-c.nix). Here it is built the same way, and the rest comes from nixpkgs.
       avro = {
         buildInputs = [
-          avro-c
+          avroC
           jansson
           snappy
           xz
@@ -244,7 +266,7 @@ let
       // {
         inherit name;
         version = lib.substring 0 10 pin.rev;
-        include = pin.include or null;
+        include = args.include or (pin.include or null);
 
         # The pinned source with its submodules, DuckDB's patches for it and
         # ours applied. A separate derivation, so a patch that no longer applies
