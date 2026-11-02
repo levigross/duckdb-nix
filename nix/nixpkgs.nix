@@ -31,6 +31,21 @@ in
       _module.args = {
         pkgs = pkgsFrom inputs.nixpkgs;
 
+        # the package set of each nixpkgs, by the prefix of the names of its outputs
+        nixpkgsSets = lib.mapAttrs (_: pkgsFrom) nixpkgsByPrefix;
+
+        # The name of a DuckDB line in an attribute name: "1.4" is "-1_4", since a
+        # dot in a name has to be quoted on the command line.
+        lineTag = line: "-${lib.replaceStrings [ "." ] [ "_" ] line}";
+
+        # The DuckDB line that each older nixpkgs ships. It is built and checked on
+        # that nixpkgs, as the default version is on all of them; on the others it
+        # is only evaluated.
+        shippedLines = {
+          "stable-" = "1.5";
+          "previous-" = "1.4";
+        };
+
         # `outputsFor` takes a package set and returns an attribute set. This
         # gives the union of what it returns for each nixpkgs.
         forEachNixpkgs =

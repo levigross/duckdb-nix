@@ -19,6 +19,26 @@
           rustc = toolchain;
         };
       duckdb = final.callPackage ../pkgs/duckdb { inherit (prev) duckdb; };
+
+      # Every DuckDB version that is pinned, by release ("1.4.3") and by line ("1.4").
+      # `duckdb` is the default one.
+      duckdbVersions =
+        let
+          releases = final.lib.attrNames (
+            final.lib.filterAttrs (_: type: type == "directory") (builtins.readDir ../pkgs/duckdb/versions)
+          );
+          byRelease = final.lib.genAttrs releases (
+            release:
+            final.callPackage ../pkgs/duckdb {
+              inherit (prev) duckdb;
+              inherit release;
+            }
+          );
+        in
+        byRelease
+        // final.lib.mapAttrs' (
+          release: duckdb: final.lib.nameValuePair (final.lib.versions.majorMinor release) duckdb
+        ) byRelease;
     })
   ];
 }
