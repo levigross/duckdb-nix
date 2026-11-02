@@ -14,9 +14,12 @@
   cmake,
   ninja,
   openssl,
+  callPackage,
   pybind11,
   scikit-build-core,
   setuptools-scm,
+  # 2.0 is written with nanobind 3; the nixpkgs that lack it get a copy
+  nanobind_3 ? callPackage ./nanobind.nix { },
   fsspec,
   google-cloud-storage,
   ipython,
@@ -36,8 +39,12 @@ let
   names = map (ext: ext.name) build.selected;
 
   # In-tree extensions are listed in pyproject.toml, as CORE_EXTENSIONS before 1.5 and as
-  # BUILD_EXTENSIONS from then on, together with jemalloc, which the wheels carry
-  inTree = lib.concatStringsSep ";" (build.inTreeExtensions ++ [ "jemalloc" ]);
+  # BUILD_EXTENSIONS from then on. DuckDB's own CMake adds jemalloc to them on Linux.
+  inTree = lib.concatStringsSep ";" build.inTreeExtensions;
+  # In 2.0 the module links the extensions it is told to, in this order: the in-tree ones,
+  # then each of ours after the extensions it needs
+  linked = lib.concatStringsSep ";" (build.inTreeExtensions ++ names);
+  isV2 = lib.versionAtLeast build.version "2";
   variable = if lib.versionOlder build.version "1.5" then "CORE_EXTENSIONS" else "BUILD_EXTENSIONS";
 
   # ipython and adbc_driver_manager are left out, as in nixpkgs
@@ -77,21 +84,35 @@ buildPythonPackage {
       chmod -R u+w external/duckdb/extension_external/${ext.name}
     '') build.selected}
 
-    # replace pybind11[global] with pybind11
-    substituteInPlace pyproject.toml \
-      --replace-fail "pybind11[global]" "pybind11"
-
     # replace custom build backend with standard scikit-build-core
     substituteInPlace pyproject.toml \
       --replace-fail 'build-backend = "duckdb_packaging.build_backend"' \
                      'build-backend = "scikit_build_core.build"' \
       --replace-fail 'backend-path = ["./"]' \
                      '# backend-path removed'
+  ''
+  + (
+    if isV2 then
+      ''
+        # The version comes from git or from a source distribution, by a provider that is
+        # part of the backend that was replaced: give it.
+        substituteInPlace pyproject.toml \
+          --replace-fail 'dynamic = ["version"]' 'version = "${build.version}"' \
+          --replace-fail 'metadata.version.provider = "duckdb_packaging.build_info"' "" \
+          --replace-fail 'BUILD_EXTENSIONS = "core_functions;json;parquet;icu"' 'BUILD_EXTENSIONS = "${inTree}"' \
+          --replace-fail 'LINK_EXTENSIONS = ""' 'LINK_EXTENSIONS = "${linked}"'
+      ''
+    else
+      ''
+        # replace pybind11[global] with pybind11
+        substituteInPlace pyproject.toml \
+          --replace-fail "pybind11[global]" "pybind11"
 
-    # the in-tree extensions of the DuckDB this module belongs to
-    sed -i 's/^${variable} = ".*"/${variable} = "${inTree}"/' pyproject.toml
-    grep -q '^${variable} = "${inTree}"' pyproject.toml
-  '';
+        # the in-tree extensions of the DuckDB this module belongs to
+        sed -i 's/^${variable} = ".*"/${variable} = "${inTree}"/' pyproject.toml
+        grep -q '^${variable} = "${inTree}"' pyproject.toml
+      ''
+  );
 
   nativeBuildInputs = [
     cmake
@@ -101,11 +122,19 @@ buildPythonPackage {
 
   dontUseCmakeConfigure = true;
 
-  build-system = [
-    pybind11
-    scikit-build-core
-    setuptools-scm
-  ];
+  build-system =
+    if isV2 then
+      [
+        nanobind_3
+        scikit-build-core
+        numpy
+      ]
+    else
+      [
+        pybind11
+        scikit-build-core
+        setuptools-scm
+      ];
 
   # libduckdb is not linked: the module has its own DuckDB, with the extensions.
   buildInputs = [ openssl ] ++ lib.concatMap (ext: ext.buildInputs) build.selected;
@@ -120,8 +149,16 @@ buildPythonPackage {
     # The flags go through the environment, since scikit-build-core splits the flags it is
     # given as settings at every ;, and the lists in these are separated by it.
     CMAKE_ARGS = lib.escapeShellArgs (
-      [
-        "-DOVERRIDE_GIT_DESCRIBE=v${build.version}-0-g${build.rev}"
+      (
+        if isV2 then
+          [
+            "-DDUCKDB_EXPLICIT_VERSION=v${build.version}"
+            "-DGIT_COMMIT_HASH=${build.rev}"
+          ]
+        else
+          [ "-DOVERRIDE_GIT_DESCRIBE=v${build.version}-0-g${build.rev}" ]
+      )
+      ++ [
         (lib.cmakeFeature "DUCKDB_EXTENSION_CONFIGS" "${build.extensionConfig}")
       ]
       ++ build.extensionFlags
