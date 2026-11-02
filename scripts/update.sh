@@ -99,7 +99,18 @@ gh api "repos/duckdb/duckdb/contents/.github/config/extensions?ref=$tag" --jq '.
 # duckdb/community-extensions name the commit to build. DuckDB's own pins are
 # for exactly this release; a community one is only known to fit it if the
 # DuckDB it was developed against, which is a submodule, is this release.
-community=(duckpgq)
+#
+# A descriptor is not proof that the repository has the extension: for DuckDB 2.0
+# the Query.Farm ones (datasketches, hashfuncs, crypto, ...) are stubs that load
+# a build from Query.Farm's own repository, or fail saying how to install it, and
+# linked in they would fail at startup. Read src/ before adding one.
+community=(
+  duckpgq
+  psql
+  sheetreader
+  webbed
+  zipfs
+)
 community_rev="$(gh api repos/duckdb/community-extensions/commits/main --jq .sha)"
 duckdb_rev="$(jq -r .rev "$versions")"
 for name in "${community[@]}"; do

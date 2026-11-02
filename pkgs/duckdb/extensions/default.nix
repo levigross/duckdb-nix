@@ -17,8 +17,11 @@
   gdal,
   geos,
   jansson,
+  libarchive,
   libpq,
+  libxml2,
   mariadb-connector-c,
+  miniz,
   minizip-ng,
   openssl,
   proj,
@@ -450,6 +453,27 @@ lib.mapAttrs mkPinnedExtension {
     };
   };
 
+  # a community extension: a pipe syntax. Loading switches it on for the connections
+  # of a program that links DuckDB; the shell sets its own list of grammars, so there
+  # it is switched on with psql_enable(), in a command before the first that uses it.
+  psql = {
+    smoke.sql = [
+      "CALL psql_enable()"
+      "FROM range(10) |> WHERE range >= 5 |> SELECT CASE WHEN count(*) = 5 THEN 1 ELSE error('psql pipeline') END"
+    ];
+    testSkips = [
+      {
+        reason = "psql switches its grammar on in every connection a program makes, and these C++ tests assert that a new connection has the base grammar or count the grammars compiled, so with psql linked they find one more. Nothing the test configuration loads changes that: run apart with nothing loaded they fail the same way. They pass in every build without psql";
+        names = [
+          "Literal caches respect active grammar extensions"
+          "The least recently used grammar for active grammar extensions is evicted"
+          "Active grammar extensions are cached on their connection"
+          "Grammar extensions that fail to compile do not evict cached grammars"
+        ];
+      }
+    ];
+  };
+
   quack = {
     dependencies = [ "httpfs" ];
     buildInputs = [
@@ -471,6 +495,23 @@ lib.mapAttrs mkPinnedExtension {
         loads = [ ];
         tests = [ "test/sql/connect/connect_passthrough_quack.test" ];
       }
+    ];
+  };
+
+  # a community extension
+  sheetreader = {
+    postPatch = ''
+      # The extension carries a miniz of its own, and zipfs links another version of
+      # it. A C library has no namespace, so both would define every mz_ function in
+      # the one libduckdb. Rename this copy's.
+      grep -rlE '\b(mz|tdefl|tinfl|miniz)_' src | xargs sed -i -E 's/\b(mz|tdefl|tinfl|miniz)_/sheetreader_\1_/g'
+      ! grep -rqE '\b(mz|tdefl|tinfl)_' src
+    '';
+    # The workbook is written by the excel extension, which the check links with the
+    # rest. Cells with strings are inline in it, which this extension does not read yet.
+    smoke.sql = [
+      "COPY (SELECT i AS a, i * 2 AS b FROM range(1, 4) t(i)) TO 'smoke.xlsx' (FORMAT xlsx, HEADER false)"
+      "SELECT CASE WHEN count(*) = 3 AND sum(Numeric0) = 6 AND sum(Numeric1) = 12 THEN 1 ELSE error('sheetreader') END FROM sheetreader('smoke.xlsx')"
     ];
   };
 
@@ -614,4 +655,37 @@ lib.mapAttrs mkPinnedExtension {
     INSERT INTO v VALUES ([1, 2, 3]::FLOAT[3]);
     CREATE INDEX idx ON v USING HNSW (e);
   '';
+
+  # a community extension
+  webbed = {
+    buildInputs = [
+      libxml2
+      zlib
+    ];
+    smoke = ''
+      SELECT CASE WHEN xml_extract_text('<book><title>Database Guide</title></book>', '//title') = ['Database Guide'] THEN 1 ELSE error('xml_extract_text') END;
+      SELECT CASE WHEN html_extract_text('<html><body><h1>Welcome</h1></body></html>', '//h1') = ['Welcome'] THEN 1 ELSE error('html_extract_text') END;
+    '';
+  };
+
+  # a community extension
+  zipfs = {
+    buildInputs = [
+      libarchive
+      miniz
+    ];
+    # a zip is read with miniz, other archives with libarchive
+    smoke = {
+      setup = ''
+        printf 'a,b\n1,2\n3,4\n' > data.csv
+        ${lib.getExe' libarchive "bsdtar"} -c --format zip -f smoke.zip data.csv
+        ${lib.getExe' libarchive "bsdtar"} -c -z -f smoke.tar.gz data.csv
+      '';
+      sql = [
+        "SELECT CASE WHEN sum(b) = 6 THEN 1 ELSE error('zip') END FROM 'zip://smoke.zip/data.csv'"
+        "SET zipfs_split = '!!'"
+        "SELECT CASE WHEN sum(b) = 6 THEN 1 ELSE error('tar.gz') END FROM 'archive://smoke.tar.gz!!data.csv'"
+      ];
+    };
+  };
 }

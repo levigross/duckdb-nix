@@ -162,12 +162,42 @@
       }
     }
   },
+  "psql": {
+    "community": {
+      "descriptorHash": "sha256-6MKJ3DJouUz1eufa9OdIrP5eu5FhxAUqejY98nx9EIc=",
+      "rev": "845779e73672b9d28420b5a1268df7bf247a0b9d"
+    },
+    "hash": "sha256-8sybLgdw9IMIa+PQ/YL3qrgvOw0Tlxbzn6bMLPcViTY=",
+    "owner": "ywelsch",
+    "patches": false,
+    "repo": "duckdb-psql",
+    "rev": "13bea88da7050c72e4d33f7649fa72db58a22627"
+  },
   "quack": {
     "hash": "sha256-S3/yaeTiJoA3efiMPksLVGlfKm3JH7I3tzuub9v3IQg=",
     "owner": "duckdb",
     "patches": false,
     "repo": "duckdb-quack",
     "rev": "f96420ed46aee9c42064bdb99ddfd1230d6c0086"
+  },
+  "sheetreader": {
+    "community": {
+      "descriptorHash": "sha256-txQVCayC+SRrcch2tRtyO0uovUyfxFINWYEJpWi4zQQ=",
+      "rev": "845779e73672b9d28420b5a1268df7bf247a0b9d"
+    },
+    "hash": "sha256-0kdyZrMwnG8vQdtyS1qhh592nadoPYCsrDGRvRxPoA8=",
+    "owner": "polydbms",
+    "patches": false,
+    "repo": "sheetreader-duckdb",
+    "rev": "c201b73ad98bd1d3c64a727d0a24168975308ab8",
+    "submodules": {
+      "src/include/sheetreader-core": {
+        "hash": "sha256-35DR2xfsdwdJVgP9vOzFNB8D7e8oP9JV59igG/ZSD8Q=",
+        "owner": "polydbms",
+        "repo": "sheetreader-core",
+        "rev": "6494e23d1480647db0fb2c4ac39f3a6af7426748"
+      }
+    }
   },
   "spatial": {
     "hash": "sha256-bhLRwuN8SfW1oDCaiRpdZDh3kTSndiPs+sHoXQ+MSrc=",
@@ -223,5 +253,27 @@
     "patches": false,
     "repo": "duckdb-vss",
     "rev": "3685131eacaf0d467d430be5c4e5e7d1d483437a"
+  },
+  "webbed": {
+    "community": {
+      "descriptorHash": "sha256-2yQZDlaWipWCk7ezX0YCtbr50Y5w+jTcguJbpbx3ALE=",
+      "rev": "845779e73672b9d28420b5a1268df7bf247a0b9d"
+    },
+    "hash": "sha256-xrrSRYMOPkJBfxSV1CeA33Oz8M/JmA2IPNaPGXDmOwU=",
+    "owner": "teaguesterling",
+    "patches": false,
+    "repo": "duckdb_webbed",
+    "rev": "84819a583d3d7f8095fa29e4f1f8094ca7b67a86"
+  },
+  "zipfs": {
+    "community": {
+      "descriptorHash": "sha256-F8Grxp2qVb12RfMOLCioXBapsrgoM7wkcQl+D3SkRXg=",
+      "rev": "845779e73672b9d28420b5a1268df7bf247a0b9d"
+    },
+    "hash": "sha256-Ae+4lJnqb/H6JN9HsPyxi0dz3MSHnxIPhYaGg6h7JVA=",
+    "owner": "isaacbrodsky",
+    "patches": false,
+    "repo": "duckdb-zipfs",
+    "rev": "fd9fec45453caef9bd1a89a7f6d92e421da63ca8"
   }
 }

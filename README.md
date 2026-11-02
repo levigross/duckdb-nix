@@ -7,7 +7,7 @@ nixpkgs' `duckdb` builds only the extensions in DuckDB's own tree. Everything el
 (`httpfs`, `spatial`, `iceberg`, ...) has to be downloaded at runtime as a signed
 binary, which does not suit Nix, a sandbox, or a library that is linked rather than run.
 
-Status: DuckDB 2.0.0, x86_64-linux with glibc. 24 of the 25 out-of-tree extensions
+Status: DuckDB 2.0.0, x86_64-linux with glibc. 28 of the 29 out-of-tree extensions
 link and pass their checks on nixpkgs unstable, and most of them on the two latest
 stable releases (see [nixpkgs versions](#nixpkgs-versions)). See also
 [Not done](#not-done).
@@ -21,7 +21,7 @@ There is a package for each extension, and `nix flake show` lists them:
 ```sh
 nix run github:levigross/duckdb-nix#duckdb-spatial
 nix shell github:levigross/duckdb-nix#duckdb-httpfs
-nix build github:levigross/duckdb-nix#duckdb-all    # all 24
+nix build github:levigross/duckdb-nix#duckdb-all    # all 28
 ```
 
 For 26.05 and 25.11 the names carry a prefix: `#stable-duckdb-spatial`,
@@ -126,9 +126,9 @@ the overlay works on whichever nixpkgs you apply it to.
 
 | nixpkgs | extensions in `duckdb-all` | not available |
 |---|---|---|
-| unstable | 24 | |
-| 26.05 | 23 | spatial: its sources need GDAL 3.13, nixpkgs has 3.12 |
-| 25.11 | 22 | spatial (GDAL 3.11), azure (nixpkgs has no Azure SDK) |
+| unstable | 28 | |
+| 26.05 | 27 | spatial: its sources need GDAL 3.13, nixpkgs has 3.12 |
+| 25.11 | 26 | spatial (GDAL 3.11), azure (nixpkgs has no Azure SDK) |
 
 An extension that a nixpkgs cannot build says why when you ask for it, and is left
 out of `duckdb-all` and the checks. Nothing is backported; the answer is a newer nixpkgs.
@@ -137,16 +137,25 @@ out of `duckdb-all` and the checks. Nothing is backported; the answer is a newer
 
 | | |
 |---|---|
-| no dependencies | encodings, fts, inet, legacy_parser, sqlsmith, sqlite_scanner, vss, duckpgq |
-| system libraries | httpfs, quack, excel, aws, glue, azure, ducklake, iceberg, avro, unity_catalog, postgres_scanner, mysql_scanner, spatial |
+| no dependencies | encodings, fts, inet, legacy_parser, sqlsmith, sqlite_scanner, vss, duckpgq, psql, sheetreader |
+| system libraries | httpfs, quack, excel, aws, glue, azure, ducklake, iceberg, avro, unity_catalog, postgres_scanner, mysql_scanner, spatial, zipfs, webbed |
 | Rust | lance, delta, vortex |
 | cannot be linked | odbc_scanner (a C API extension, loadable at runtime only) |
 
 Each is the commit the DuckDB release pins in `.github/config/extensions/`. The
-exception is duckpgq (SQL/PGQ graph queries), a community extension: its commit is
-the one the `duckdb/community-extensions` descriptor names, and the update script
-refuses it unless the DuckDB it was developed against is this release. From DuckDB 2.0
-its syntax is switched on with `SET active_grammar_extensions = ['duckpgq']`.
+exceptions are community extensions: duckpgq (SQL/PGQ graph queries), psql (a pipe
+syntax), sheetreader (fast XLSX reading), webbed (XML and HTML) and zipfs (files inside
+zip and other archives). Their commit is the one the `duckdb/community-extensions`
+descriptor names, and the update script refuses it unless the DuckDB it was developed
+against is this release. A descriptor is not proof that the extension is there, though:
+for DuckDB 2.0 the Query.Farm ones (datasketches, hashfuncs, crypto, ...) are stubs that
+load a build from Query.Farm's own repository, so none of them is packaged.
+
+Some of these need switching on, since from DuckDB 2.0 a grammar is per connection:
+duckpgq with `SET active_grammar_extensions = ['duckpgq']`, and psql with
+`CALL psql_enable()` in the shell, which sets its own grammar. A program that links
+`libduckdb` has psql on in every connection.
+
 Asking for an extension that needs another gets it too (`iceberg` brings `avro` and `httpfs`).
 
 ## How it works
@@ -246,7 +255,7 @@ an extension is absent, and C++ tests that cannot run with `postgres_scanner` or
 - Fully static (`pkgsStatic`, musl) builds.
 - Other platforms. Only x86_64-linux has been built; aarch64-linux and
   aarch64-darwin are untried.
-- Size: `libduckdb.so` with all 24 is 909 MB, mostly lance's DataFusion stack. Link
+- Size: `libduckdb.so` with all 28 is 911 MB, mostly lance's DataFusion stack. Link
   only what you use.
 
 ## License
