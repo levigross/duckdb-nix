@@ -78,7 +78,34 @@ let
     rustPlatform = duckdbRustPlatform;
     src = fetchPin pins.delta.kernel;
     lockFile = rustLocks + "/delta.Cargo.lock";
+    version = lib.removePrefix "v" pins.delta.kernel.rev;
+    features = deltaFeatures;
   };
+  # what the extension's CMake builds delta-kernel-rs with (it passes --all-features
+  # before 2.0), less the second TLS backend and what is for testing
+  deltaFeatures =
+    if lib.versionAtLeast release "2" then
+      [
+        "default-engine-rustls"
+        "arrow"
+        "test-ffi"
+        "delta-kernel-unity-catalog"
+        "tracing"
+      ]
+    else if lib.versionAtLeast release "1.5" then
+      [
+        "default-engine-rustls"
+        "catalog-managed"
+        "uc-catalog"
+        "test-ffi"
+        "tracing"
+      ]
+    else
+      [
+        "default-engine-rustls"
+        "test-ffi"
+        "tracing"
+      ];
   vortexFfi = callPackage ./vortex.nix {
     rustPlatform = duckdbRustPlatform;
     src = fetchPin pins.vortex;
@@ -96,6 +123,11 @@ let
   # were written for (2.0), which pins older sources.
   versionOverrides =
     lib.optionalAttrs (lib.versionOlder release "2") {
+      # The same patch as below, for a CMake whose external project ends at LOG_BUILD
+      delta = args: {
+        postPatch = lib.replaceStrings [ "LOG_OUTPUT_ON_FAILURE ON)" ] [ "LOG_BUILD ON)" ] args.postPatch;
+      };
+
       # Until 2.0 avro-c is a library the extension finds: vcpkg builds it. Here
       # nixpkgs' is used, as shared libraries.
       avro = {
@@ -116,6 +148,19 @@ let
       };
     }
     // lib.optionalAttrs (lib.versionOlder release "1.5") {
+      # Before 1.5 the extension carries the header of the library, so only the
+      # library is needed from the external project.
+      delta.postPatch = ''
+        sed -i '/^ExternalProject_Add(/,/^  LOG_BUILD ON)/d' CMakeLists.txt
+        cat > ffi.cmake <<'EOF'
+        set(DELTA_KERNEL_LIBPATH "''${DELTA_KERNEL_FFI_LIBRARY}")
+        add_custom_target(''${KERNEL_NAME})
+        EOF
+        sed -i '/^# Add rust_example as a CMake target/r ffi.cmake' CMakeLists.txt
+        rm ffi.cmake
+        ! grep -q 'ExternalProject_Add' CMakeLists.txt
+      '';
+
       # These sources still use the file handle interface of GDAL before 3.13, which
       # the definition below adapts newer sources away from, so only older GDAL builds them.
       spatial = {
@@ -224,13 +269,21 @@ let
       community = pin.community or null;
     };
 
+  # an override is the attributes to replace, or a function from the definition to them
+  overrideFor =
+    name: args:
+    let
+      override = versionOverrides.${name} or { };
+    in
+    if lib.isFunction override then override args else override;
+
   # Every extension below is defined for every DuckDB version, but a version only
   # has the pins of the extensions it configures. The others say so when asked
   # for, instead of failing to evaluate.
   mkPinnedExtension =
     name: args:
     if pins ? ${name} then
-      mkPinned name (args // versionOverrides.${name} or { })
+      mkPinned name (args // overrideFor name args)
     else
       mkExtension {
         inherit name;

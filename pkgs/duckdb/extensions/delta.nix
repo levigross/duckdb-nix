@@ -12,27 +12,24 @@
   openssl,
   src,
   lockFile,
+  # the delta-kernel-rs release, and the features the extension builds it with
+  version,
+  features,
 }:
 
 rustPlatform.buildRustPackage {
   pname = "delta-kernel-ffi";
-  version = "0.28.0";
+  inherit version;
   inherit src;
 
   cargoLock = { inherit lockFile; };
 
-  # the package and features the extension's CMake builds
+  # the package the extension's CMake builds
   cargoBuildFlags = [
     "--package"
     "delta_kernel_ffi"
   ];
-  buildFeatures = [
-    "default-engine-rustls"
-    "arrow"
-    "test-ffi"
-    "delta-kernel-unity-catalog"
-    "tracing"
-  ];
+  buildFeatures = features;
 
   strictDeps = true;
   nativeBuildInputs = [
