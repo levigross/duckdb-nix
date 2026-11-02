@@ -174,6 +174,15 @@ let
         '';
       };
 
+      # This test of the suite attaches a database over HTTP. It runs only where httpfs
+      # is linked in, which nixpkgs' build is not, so nixpkgs never meets it.
+      httpfs.testSkips = [
+        {
+          reason = "attaches a database over HTTP, which needs network access";
+          paths = [ "test/sql/attach/remote_file_concurrently.test" ];
+        }
+      ];
+
       # Before 2.0 the extension is laid out as it was in DuckDB's own tree
       fts.include = "extension/fts/include";
 
