@@ -17,41 +17,51 @@
   features,
 }:
 
-rustPlatform.buildRustPackage {
-  pname = "delta-kernel-ffi";
-  inherit version;
-  inherit src;
+rustPlatform.buildRustPackage (
+  {
+    pname = "delta-kernel-ffi";
+    inherit version;
+    inherit src;
 
-  cargoLock = { inherit lockFile; };
+    cargoLock = { inherit lockFile; };
 
-  # the package the extension's CMake builds
-  cargoBuildFlags = [
-    "--package"
-    "delta_kernel_ffi"
-  ];
-  buildFeatures = features;
+    # the package the extension's CMake builds
+    cargoBuildFlags = [
+      "--package"
+      "delta_kernel_ffi"
+    ];
+    buildFeatures = features;
 
-  strictDeps = true;
-  nativeBuildInputs = [
-    # aws-lc-sys builds its C code with cmake
-    cmake
-    perl
-    pkg-config
-  ];
-  buildInputs = [ openssl ];
-  dontUseCmakeConfigure = true;
+    strictDeps = true;
+    nativeBuildInputs = [
+      # aws-lc-sys builds its C code with cmake
+      cmake
+      perl
+      pkg-config
+    ];
+    buildInputs = [ openssl ];
+    dontUseCmakeConfigure = true;
 
-  # the headers that cbindgen generates for the library
-  postInstall = ''
-    install -Dm444 target/ffi-headers/delta_kernel_ffi.h target/ffi-headers/delta_kernel_ffi.hpp \
-      -t $out/ffi-headers
-  '';
+    # the headers that cbindgen generates for the library
+    postInstall = ''
+      install -Dm444 target/ffi-headers/delta_kernel_ffi.h target/ffi-headers/delta_kernel_ffi.hpp \
+        -t $out/ffi-headers
+    '';
 
-  doCheck = false;
+    doCheck = false;
 
-  meta = {
-    description = "Rust FFI library of DuckDB's delta extension (delta-kernel-rs)";
-    homepage = "https://github.com/delta-io/delta-kernel-rs";
-    license = lib.licenses.asl20;
-  };
-}
+    meta = {
+      description = "Rust FFI library of DuckDB's delta extension (delta-kernel-rs)";
+      homepage = "https://github.com/delta-io/delta-kernel-rs";
+      license = lib.licenses.asl20;
+    };
+  }
+  # The kernel commits no Cargo.lock before 0.21 (it ignores it), so the build gets
+  # the one this repository keeps. From then on the source has it, and the build
+  # must stay as it was.
+  // lib.optionalAttrs (lib.versionOlder version "0.21.0") {
+    prePatch = ''
+      cp ${lockFile} Cargo.lock
+    '';
+  }
+)
