@@ -147,6 +147,10 @@ let
       # and the header cbindgen generated from the crate is on the include path.
       vortex = {
         cmakeFlags = [ (lib.cmakeFeature "VORTEX_FFI_INCLUDE_DIR" "${vortexFfi}/include") ];
+        testSkips = lib.optional (lib.versionOlder release "1.5") {
+          reason = "expects the catalog of the system to be at version 1 once the database is open, and with the vortex of 1.4 linked in, and with nothing else, it is not; it passes with the vortex of 1.5 and with every other extension";
+          names = [ "Test catalog versioning" ];
+        };
         postPatch = ''
           sed -i '/^include(FetchContent)/,/^FetchContent_MakeAvailable(Corrosion)/d' CMakeLists.txt
           sed -i '/^corrosion_import_crate(/,/^)/d' CMakeLists.txt
