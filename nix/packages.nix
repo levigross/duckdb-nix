@@ -34,6 +34,9 @@ _:
             ext: lib.nameValuePair "duckdb${tag}-${ext.name}" (duckdb.withExtensions (e: [ e.${ext.name} ]))
           ) duckdb.linkableExtensions
         )
+        // lib.mapAttrs' (
+          name: loadable: lib.nameValuePair "duckdb${tag}-${name}-loadable" loadable
+        ) duckdb.loadableExtensions
         // {
           "duckdb${tag}" = duckdb;
           "duckdb${tag}-all" = all;

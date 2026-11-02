@@ -54,3 +54,11 @@ in
     extensions = linkable;
   };
 }
+# the extensions that only come as the registry's build load, and work
+// lib.optionalAttrs (duckdb.loadableExtensions != { }) {
+  loadable-extensions = import ./loadable-extensions.nix {
+    inherit pkgs;
+    duckdb = withAll;
+    loadables = duckdb.loadableExtensions;
+  };
+}

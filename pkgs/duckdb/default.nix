@@ -27,6 +27,21 @@ let
     inherit (versions) hash;
   };
 
+  # Extensions that cannot be linked in from source: the registry's own build of them, to be
+  # loaded (extensions/loadable.nix). Only the releases that have one have the file.
+  loadableExtensions =
+    removeAttrs
+      (callPackage ./extensions/loadable.nix {
+        duckdbVersion = "v${versions.version}";
+        entries = lib.optionalAttrs (builtins.pathExists ./versions/${release}/loadable.json) (
+          lib.importJSON ./versions/${release}/loadable.json
+        );
+      })
+      [
+        "override"
+        "overrideDerivation"
+      ];
+
   isolateRust = callPackage ./isolate-rust.nix { };
 
   mkExtension = import ./mk-extension.nix { inherit lib; };
@@ -159,6 +174,7 @@ let
             flag
         ) old.cmakeFlags
         ++ extensionFlags;
+
     in
     lib.throwIf (problems != [ ]) "cannot build: ${lib.concatStringsSep "; " problems}" (
       duckdb.overrideAttrs (
@@ -182,6 +198,7 @@ let
             # must fail to evaluate until it is ported rather than use a stale one
             (removeAttrs old.passthru [ "pythonHash" ]) // {
               extensions = available;
+              inherit loadableExtensions;
               # for linking an extension that is not one of these, see templates/extension
               inherit mkExtension;
               # all those this nixpkgs can link in, for building with every one
