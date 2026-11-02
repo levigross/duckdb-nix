@@ -51,26 +51,37 @@ jobs:
           sources="$(nix eval --json .#packages.x86_64-linux --apply builtins.attrNames |
             jq --raw-output '.[] | select(startswith("source-")) | ".#packages.x86_64-linux." + .')"
           # shellcheck disable=SC2086 # one argument for each line
-          nix build --no-link --print-build-logs $sources .#checks.x86_64-linux.extension-pins
+          nix build --no-link --print-build-logs $sources .#checks.x86_64-linux.extension-pins \
+            .#checks.x86_64-linux.previous-extension-pins-1_4 .#checks.x86_64-linux.stable-extension-pins-1_5
 
   # CMake configures DuckDB with every extension each nixpkgs can build, which
   # finds a missing dependency or a changed option without compiling anything.
   configure:
-    name: configure (${{ matrix.nixpkgs }})
+    name: configure (${{ matrix.nixpkgs }}, DuckDB ${{ matrix.duckdb }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - nixpkgs: unstable
-            prefix: ""
+            duckdb: "2.0"
+            package: dev-configure
           - nixpkgs: stable
-            prefix: stable-
+            duckdb: "2.0"
+            package: stable-dev-configure
           - nixpkgs: previous
-            prefix: previous-
+            duckdb: "2.0"
+            package: previous-dev-configure
+          # the DuckDB each older nixpkgs ships
+          - nixpkgs: stable
+            duckdb: "1.5"
+            package: stable-dev-configure-1_5
+          - nixpkgs: previous
+            duckdb: "1.4"
+            package: previous-dev-configure-1_4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - run: nix build --no-link --print-build-logs .#${{ matrix.prefix }}dev-configure
+      - run: nix build --no-link --print-build-logs .#${{ matrix.package }}
