@@ -11,6 +11,7 @@
   pkg-config,
   openssl,
   src,
+  lockFile,
 }:
 
 rustPlatform.buildRustPackage {
@@ -18,7 +19,7 @@ rustPlatform.buildRustPackage {
   version = "0.28.0";
   inherit src;
 
-  cargoLock.lockFile = ./rust/delta.Cargo.lock;
+  cargoLock = { inherit lockFile; };
 
   # the package and features the extension's CMake builds
   cargoBuildFlags = [

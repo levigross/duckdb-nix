@@ -2,11 +2,11 @@
 # Regenerate every pin from an upstream DuckDB release, computing all hashes
 # here rather than copying them from anywhere:
 #
-#   pkgs/duckdb/versions.json            DuckDB itself: version, commit, hash
-#   pkgs/duckdb/extensions/pins.json     each extension (and the submodules it
-#                                        needs) at the commit that release pins
-#                                        in .github/config/extensions/*.cmake,
-#                                        and the community ones named below
+#   pkgs/duckdb/versions/<version>/version.json   DuckDB itself: version, commit, hash
+#   pkgs/duckdb/versions/<version>/pins.json      each extension (and the submodules it
+#                                                 needs) at the commit that release pins
+#                                                 in .github/config/extensions/*.cmake,
+#                                                 and the community ones named below
 #
 #   scripts/update.sh [tag]     # default: the latest DuckDB release
 #
@@ -15,8 +15,6 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-versions="$root/pkgs/duckdb/versions.json"
-out="$root/pkgs/duckdb/extensions/pins.json"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -24,6 +22,12 @@ raw() { gh api -H "Accept: application/vnd.github.raw" "$1"; }
 prefetch() { nix flake prefetch "github:$1/$2" --json | jq -r .hash; }
 
 tag="${1:-$(gh release list -R duckdb/duckdb --exclude-pre-releases --limit 1 --json tagName --jq '.[].tagName')}"
+
+# one directory of state for each DuckDB version
+dir="$root/pkgs/duckdb/versions/${tag#v}"
+mkdir -p "$dir/rust"
+versions="$dir/version.json"
+out="$dir/pins.json"
 
 # DuckDB itself. An annotated tag points at a tag object, not the commit.
 read -r type sha < <(gh api "repos/duckdb/duckdb/git/ref/tags/$tag" --jq '"\(.object.type) \(.object.sha)"')
@@ -160,7 +164,7 @@ echo "wrote $out ($(jq 'length' "$out") extensions, duckdb $tag)" >&2
 
 # Rust extensions build offline from their Cargo.lock. It is copied in here so
 # that evaluating the flake needs no network and no import from derivation.
-locks="$root/pkgs/duckdb/extensions/rust"
+locks="$dir/rust"
 mkdir -p "$locks"
 vendor_lock() { # name  jq path of its source in pins.json  Cargo.lock path in that repo
   local repo rev

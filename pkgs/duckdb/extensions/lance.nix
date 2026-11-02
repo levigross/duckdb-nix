@@ -11,6 +11,7 @@
   pkg-config,
   openssl,
   src,
+  lockFile,
 }:
 
 rustPlatform.buildRustPackage {
@@ -18,7 +19,7 @@ rustPlatform.buildRustPackage {
   version = "0.1.0";
   inherit src;
 
-  cargoLock.lockFile = ./rust/lance.Cargo.lock;
+  cargoLock = { inherit lockFile; };
 
   strictDeps = true;
   nativeBuildInputs = [

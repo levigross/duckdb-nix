@@ -12,6 +12,7 @@
   protobuf,
   openssl,
   src,
+  lockFile,
   duckdbSrc,
   duckdbVersion,
   gitHashes,
@@ -21,7 +22,6 @@ let
   # The lock upstream commits pins an older vortex than Cargo.toml asks for, so
   # scripts/update.sh re-resolves it, as upstream's online `cargo build` does on
   # every build. It replaces the committed one before the build checks the two.
-  lockFile = ./rust/vortex.Cargo.lock;
   lock = lib.importTOML lockFile;
 
   gitPackages = lib.filter (package: lib.hasPrefix "git+" (package.source or "")) lock.package;
