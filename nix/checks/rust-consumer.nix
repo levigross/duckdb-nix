@@ -10,11 +10,26 @@
 let
   inherit (pkgs) lib;
 
+  # The program is written for the `duckdb` crate of DuckDB 2.0. The state of an older
+  # release says which crate goes with it and has the lock file resolved for it
+  # (scripts/update.sh).
+  example = ../../examples/rust-consumer;
+  state = ../../pkgs/duckdb/versions + "/${duckdb.version}";
+  crate = (lib.importJSON (state + "/rust-consumer.json")).crate;
+  older = builtins.pathExists (state + "/rust-consumer.json");
+  olderSrc = pkgs.runCommand "rust-consumer-${duckdb.version}-source" { } ''
+    cp -r ${example} $out
+    chmod -R u+w $out
+    substituteInPlace $out/Cargo.toml --replace-fail '=1.20000.1' '=${crate}'
+    cp ${state + "/rust/rust-consumer.Cargo.lock"} $out/Cargo.lock
+  '';
+
   program = pkgs.duckdbRustPlatform.buildRustPackage {
     pname = "rust-consumer";
     version = "0.1.0";
-    src = ../../examples/rust-consumer;
-    cargoLock.lockFile = ../../examples/rust-consumer/Cargo.lock;
+    src = if older then olderSrc else example;
+    cargoLock.lockFile =
+      if older then state + "/rust/rust-consumer.Cargo.lock" else example + "/Cargo.lock";
 
     strictDeps = true;
 
