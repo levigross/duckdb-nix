@@ -14,6 +14,11 @@ let
   versions = lib.importJSON ./versions/${release}/version.json;
   pins = lib.importJSON ./versions/${release}/pins.json;
   rustLocks = ./versions/${release}/rust;
+  # the extensions the community registry published no build of for this release,
+  # with the reason; only the releases that have such an extension have the file
+  unavailable = lib.optionalAttrs (builtins.pathExists ./versions/${release}/unavailable.json) (
+    lib.importJSON ./versions/${release}/unavailable.json
+  );
 
   duckdbSrc = fetchFromGitHub {
     owner = "duckdb";
@@ -35,7 +40,7 @@ let
       (callPackage ./extensions {
         inherit duckdbSrc;
         duckdbVersion = "v${versions.version}";
-        inherit pins rustLocks;
+        inherit pins rustLocks unavailable;
       })
       [
         "override"

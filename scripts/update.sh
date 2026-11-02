@@ -7,6 +7,8 @@
 #                                                 needs) at the commit that release pins
 #                                                 in .github/config/extensions/*.cmake,
 #                                                 and the community ones named below
+#   pkgs/duckdb/versions/<version>/unavailable.json  the community extensions the registry
+#                                                 published no build of for that release
 #
 #   scripts/update.sh [tag]     # default: the latest DuckDB release
 #
@@ -15,10 +17,11 @@
 #
 # Everything is built in a temporary directory and replaces the version's
 # directory only once the whole run has succeeded, so a failure leaves the
-# previous state alone. What a release does not have, or has in a shape that is
-# not packaged yet, is skipped with a message: lance and delta in the releases
-# before they were added, vortex before 2.0, and the community extensions for
-# any release but the latest.
+# previous state alone. What a release does not have is skipped with a message:
+# lance and delta in the releases before they were added, for one. A community
+# extension is pinned only if the registry published a build of it for exactly
+# this release, at the descriptor the registry had while it built that release.
+# COMMUNITY_REV=<commit of duckdb/community-extensions> overrides which.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,6 +35,8 @@ tag="${1:-$(gh release list -R duckdb/duckdb --exclude-pre-releases --limit 1 --
 
 # one directory of state for each DuckDB version, which is written last
 dir="$root/pkgs/duckdb/versions/${tag#v}"
+# what the previous run of this release left, for the parts that should not change with the day
+previous="$dir"
 stage="$work/stage"
 mkdir -p "$stage/rust"
 versions="$stage/version.json"
@@ -79,18 +84,6 @@ pin_one() {
   repo="${url#https://github.com/}"
   repo="${repo%.git}"
 
-  # The vortex expression builds vortex-extension/, which duckdb-vortex has from
-  # DuckDB 2.0. Before, its Rust is the `vortex` git submodule, which is not
-  # packaged yet.
-  local tree
-  if [ "$name" = vortex ]; then
-    tree="$(gh api "repos/$repo/git/trees/$sha" --jq '.tree[] | select(.path == "vortex-extension") | .sha')"
-    if [ -z "$tree" ]; then
-      echo "skip vortex: $repo@${sha:0:10} has no vortex-extension/, its Rust is the vortex git submodule, which is not packaged yet" >&2
-      return 0
-    fi
-  fi
-
   local hash
   hash="$(prefetch "$repo" "$sha")"
 
@@ -121,9 +114,14 @@ gh api "repos/duckdb/duckdb/contents/.github/config/extensions?ref=$tag" --jq '.
   xargs -P 8 -I{} bash -e -o pipefail -c 'pin_one {}'
 
 # Community extensions are not in DuckDB's own config. Their descriptors in
-# duckdb/community-extensions name the commit to build. DuckDB's own pins are
-# for exactly this release; a community one is only known to fit it if the
-# DuckDB it was developed against, which is a submodule, is this release.
+# duckdb/community-extensions name the commit to build, and the registry builds
+# each DuckDB release it supports from the descriptors it has while it targets
+# that release. So for a release the descriptors to read are the registry's last
+# commit while it targeted exactly this release, and an extension is only pinned
+# if the registry published a build of it for the release: the descriptor of one
+# that failed to build, or was added later, says nothing about this release. The
+# DuckDB submodule of the extension's own repository is not part of that: the
+# registry builds against the release tag whatever it points at.
 #
 # A descriptor is not proof that the repository has the extension: for DuckDB 2.0
 # the Query.Farm ones (datasketches, hashfuncs, crypto, ...) are stubs that load
@@ -136,28 +134,60 @@ community=(
   webbed
   zipfs
 )
-# The descriptors used are those at the HEAD of the repository, which fit only the
-# latest release; choosing them for an older one is not implemented.
-community_rev=
-major="${tag#v}"
-major="${major%%.*}"
-if [ "$major" -lt 2 ]; then
-  echo "skip community extensions (${community[*]}): not implemented for $tag, only for DuckDB 2.0 and later" >&2
-  community=()
+
+# The registry bumps the DuckDB it builds with in generate_docs.yml, among others.
+# The last commit before the bump that left this release is the one to read; for
+# the release it is on now, the latest.
+registry_workflow=.github/workflows/generate_docs.yml
+registry_rev() { # tag
+  local sha newer= found=
+  while read -r sha; do
+    if raw "repos/duckdb/community-extensions/contents/$registry_workflow?ref=$sha" | grep -q "releases/download/$1/"; then
+      found="$sha"
+      break
+    fi
+    newer="$sha"
+  done < <(gh api --paginate "repos/duckdb/community-extensions/commits?path=$registry_workflow&per_page=100" --jq '.[].sha')
+  [ -n "$found" ] || { echo "the community-extensions registry never built with DuckDB $1" >&2; return 1; }
+  if [ -z "$newer" ]; then
+    gh api repos/duckdb/community-extensions/commits/main --jq .sha
+  else
+    gh api "repos/duckdb/community-extensions/commits/$newer" --jq '.parents[0].sha'
+  fi
+}
+if [ -n "${COMMUNITY_REV:-}" ]; then
+  community_rev="$COMMUNITY_REV"
 else
-  community_rev="$(gh api repos/duckdb/community-extensions/commits/main --jq .sha)"
+  community_rev="$(registry_rev "$tag")"
+  raw "repos/duckdb/community-extensions/contents/$registry_workflow?ref=$community_rev" | grep -q "releases/download/$tag/" ||
+    { echo "the registry at ${community_rev:0:10} does not build with DuckDB $tag" >&2; exit 1; }
 fi
-duckdb_rev="$(jq -r .rev "$versions")"
+echo "community extensions as of duckdb/community-extensions@${community_rev:0:10}" >&2
+
+# the registry's published build of an extension for this release
+published() { # name
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' -I --max-time 60 \
+    "https://community-extensions.duckdb.org/$tag/linux_amd64/$1.duckdb_extension.gz")"
+  case "$code" in
+    200) return 0 ;;
+    403 | 404) return 1 ;;
+    *) echo "$1: HTTP $code asking whether the registry published it for $tag" >&2; exit 1 ;;
+  esac
+}
+mkdir -p "$work/unavailable"
 for name in "${community[@]}"; do
+  if ! published "$name"; then
+    echo "skip $name: the registry published no build of it for DuckDB $tag" >&2
+    jq -n --arg n "$name" --arg t "$tag" \
+      '{($n): "the community-extensions registry published no build of it for DuckDB \($t)"}' >"$work/unavailable/$name.json"
+    continue
+  fi
   descriptor="https://raw.githubusercontent.com/duckdb/community-extensions/$community_rev/extensions/$name/description.yml"
   repo="$(curl -fsSL "$descriptor" | awk '/^repo:/ {in_repo = 1; next} in_repo && $1 == "github:" {print $2; exit}')"
-  sha="$(curl -fsSL "$descriptor" | awk '/^repo:/ {in_repo = 1; next} in_repo && $1 == "ref:" {print $2; exit}')"
+  # the ref may be quoted
+  sha="$(curl -fsSL "$descriptor" | awk '/^repo:/ {in_repo = 1; next} in_repo && $1 == "ref:" {print $2; exit}' | tr -d "'\"")"
   [ -n "$repo" ] && [ -n "$sha" ] || { echo "$name: no repository and ref in $descriptor" >&2; exit 1; }
-  built_with="$(gh api "repos/$repo/git/trees/$sha" --jq '.tree[] | select(.path == "duckdb") | .sha')"
-  if [ "$built_with" != "$duckdb_rev" ]; then
-    echo "$name: $repo@${sha:0:10} is developed against DuckDB ${built_with:0:10}, not $tag (${duckdb_rev:0:10})" >&2
-    exit 1
-  fi
   # an extension repository has DuckDB and the CI tools as submodules, which the
   # build does not use; any other is part of the extension
   submodule_paths="$(gh api "repos/$repo/git/trees/$sha?recursive=1" --jq '.tree[] | select(.mode == "160000") | .path')"
@@ -232,6 +262,13 @@ vendor_lock() { # name  jq path of its source in pins.json  Cargo.lock path in t
   local repo rev err="$work/vendor_lock.err" how=
   repo="$(jq -r "$2 | \"\(.owner)/\(.repo)\"" "$out")"
   rev="$(jq -r "$2.rev" "$out")"
+  # A lock resolved against crates.io depends on the day it was resolved, so one kept
+  # from the previous run of the same revision is not resolved again.
+  if [ -f "$previous/pins.json" ] && [ -f "$previous/rust/$1.Cargo.lock" ] && [ "$(jq -r "$2.rev // empty" "$previous/pins.json")" = "$rev" ]; then
+    cp "$previous/rust/$1.Cargo.lock" "$locks/$1.Cargo.lock"
+    echo "kept $1.Cargo.lock of the previous run ($repo@${rev:0:10} is unchanged)" >&2
+    return 0
+  fi
   if ! raw "repos/$repo/contents/$3?ref=$rev" >"$locks/$1.Cargo.lock" 2>"$err"; then
     # only a missing file is not an error
     grep -q 'HTTP 404' "$err" || { cat "$err" >&2; return 1; }
@@ -278,6 +315,11 @@ relock_vortex() {
   local repo rev dir f
   repo="$(jq -r '.vortex | "\(.owner)/\(.repo)"' "$out")"
   rev="$(jq -r '.vortex.rev' "$out")"
+  if [ -f "$previous/pins.json" ] && [ -f "$previous/rust/vortex.Cargo.lock" ] && [ "$(jq -r '.vortex.rev // empty' "$previous/pins.json")" = "$rev" ]; then
+    cp "$previous/rust/vortex.Cargo.lock" "$locks/vortex.Cargo.lock"
+    echo "kept vortex.Cargo.lock of the previous run ($repo@${rev:0:10} is unchanged)" >&2
+    return 0
+  fi
   dir="$work/vortex-relock/vortex-extension"
   mkdir -p "$dir/src"
   for f in Cargo.toml Cargo.lock; do
@@ -291,7 +333,13 @@ relock_vortex() {
   echo "vendored vortex.Cargo.lock, re-resolved ($(grep -c '^\[\[package\]\]' "$locks/vortex.Cargo.lock") crates)" >&2
 }
 if pinned vortex; then
-  relock_vortex
+  if jq -e '.vortex.submodules.vortex' "$out" >/dev/null; then
+    # Before 2.0 the Rust is the vortex repository itself, a submodule (SUBMODULES
+    # in the config), and its Cargo.lock is in step with its own sources.
+    vendor_lock vortex .vortex.submodules.vortex Cargo.lock
+  else
+    relock_vortex
+  fi
 else
   echo "skip vortex.Cargo.lock: vortex is not pinned for $tag" >&2
 fi
@@ -327,6 +375,11 @@ if pinned vortex; then
   mv "$work/pins.json" "$out"
 fi
 
+# What the registry did not publish for this release, so the flake can say why.
+if [ -n "$(find "$work/unavailable" -name '*.json' -print -quit)" ]; then
+  jq -S -s add "$work"/unavailable/*.json >"$stage/unavailable.json"
+fi
+
 # A failed command substitution in an argument does not stop the script, and would
 # leave an empty hash behind.
 jq -e -s '[.. | objects | select(has("hash")) | .hash | select(startswith("sha256-") | not)] | length == 0' \
@@ -335,6 +388,6 @@ jq -e -s '[.. | objects | select(has("hash")) | .hash | select(startswith("sha25
 # Everything worked: replace the previous state of the release with the new one,
 # including the lock files of extensions it no longer pins.
 mkdir -p "$dir"
-rm -rf "$dir/version.json" "$dir/pins.json" "$dir/rust"
+rm -rf "$dir/version.json" "$dir/pins.json" "$dir/unavailable.json" "$dir/rust"
 cp -R "$stage"/. "$dir"/
 echo "wrote $dir (duckdb $tag, $(jq 'length' "$out") extensions, $(find "$locks" -type f | wc -l) Cargo.lock files)" >&2

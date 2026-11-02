@@ -10,6 +10,8 @@
   # this DuckDB version's pins and the Cargo.lock files for its Rust extensions
   pins,
   rustLocks,
+  # why the release has none of a community extension that the registry did not publish for it
+  unavailable ? { },
   duckdbRustPlatform,
   aws-sdk-cpp,
   # older nixpkgs have none; default.nix leaves the extension out then
@@ -381,7 +383,7 @@ let
         inherit name;
         src = null;
         version = "none";
-        unsupported = "DuckDB ${duckdbVersion} has no pin for it: it is not part of that release, or not packaged for it yet";
+        unsupported = unavailable.${name} or "it is not part of DuckDB ${duckdbVersion}";
       }
       // {
         owner = null;
