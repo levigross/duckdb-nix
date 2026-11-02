@@ -297,15 +297,17 @@ Rust consumer (and for 1.4, loadable-extensions) checks, on x86_64-linux:
 
 | | unstable | 26.05 | 25.11 |
 |---|---|---|---|
-| 2.0.0 | passes | passes | one test of DuckDB's core failed, see below |
+| 2.0.0 | passes | passes | passes (the suite failed once, see below) |
 | 1.5.2 | passes | passes | passes |
 | 1.4.3 | passes | passes | passes |
 
-On 25.11, 2.0.0 failed one of 7800 test cases, `test/api/test_query_result_format_buffer.cpp:108`
+2.0.0 on 25.11 failed one of 7800 test cases once, `test/api/test_query_result_format_buffer.cpp:108`
 (`REQUIRE(report.saw_blocked_sink)`): a producer thread of the result stream was meant to
-park and did not. That is a test of timing in DuckDB's own core, which does not involve
-an extension and passed on the other two nixpkgs with the same sources. It has not been
-shown to be flaky yet; the pair is being built again.
+park and did not. It is a test of thread timing in DuckDB's own core, which involves no
+extension. The same derivation, built again on the same machine, passed the whole suite
+(7769 test cases run, 31 skipped) and all four checks, so the test is nondeterministic.
+Why was not isolated, and the test is not left out: a failure of it alone is worth a
+second run.
 
 #### Python module
 
