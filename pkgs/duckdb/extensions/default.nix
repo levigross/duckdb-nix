@@ -2,6 +2,7 @@
   lib,
   runCommand,
   fetchFromGitHub,
+  fetchurl,
   callPackage,
   python3,
   duckdbSrc,
@@ -124,6 +125,21 @@ let
   # were written for (2.0), which pins older sources.
   versionOverrides =
     lib.optionalAttrs (lib.versionOlder release "2") {
+      # Until 2.0 the extension builds the libpq of PostgreSQL itself. It downloads the
+      # source, which CMake skips when the file is there and has the hash it expects,
+      # and configures it. The link to the system libpq below does not apply.
+      postgres_scanner = args: {
+        postPatch = ''
+          cp ${
+            fetchurl {
+              url = "https://github.com/postgres/postgres/archive/refs/tags/REL_15_13.tar.gz";
+              hash = "sha256-5tAtnakTrppMUopc/LsvKaVma2XvTAbFM85+53xd1aw=";
+            }
+          } pg.tar.gz
+        ''
+        + lib.replaceStrings [ " PostgreSQL::PostgreSQL" ] [ "" ] args.postPatch;
+      };
+
       # The same patch as below, for a CMake whose external project ends at LOG_BUILD
       delta = args: {
         postPatch = lib.replaceStrings [ "LOG_OUTPUT_ON_FAILURE ON)" ] [ "LOG_BUILD ON)" ] args.postPatch;
