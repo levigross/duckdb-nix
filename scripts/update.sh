@@ -225,8 +225,28 @@ vendor_lock() { # name  jq path of its source in pins.json  Cargo.lock path in t
   fi
   echo "vendored $1.Cargo.lock ($(grep -c '^\[\[package\]\]' "$locks/$1.Cargo.lock") crates$how)" >&2
 }
+# A crate in a lock that does not compile with the Rust toolchain used here is raised
+# to the first release that does. ethnum before 1.5.3 transmutes `()` into a
+# TryFromIntError, which is no longer the size of nothing.
+bump_crate() { # name  jq path of its source in pins.json  crate  version
+  local current repo rev src
+  current="$(grep -A1 "^name = \"$3\"\$" "$locks/$1.Cargo.lock" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -n 1)"
+  # nothing to do if the lock has no such crate or has this release or a later one
+  [ -n "$current" ] || return 0
+  [ "$(printf '%s\n%s\n' "$current" "$4" | sort -V | head -n 1)" = "$current" ] && [ "$current" != "$4" ] || return 0
+  repo="$(jq -r "$2 | \"\(.owner)/\(.repo)\"" "$out")"
+  rev="$(jq -r "$2.rev" "$out")"
+  src="$work/bump-$1"
+  cp -R "$(nix flake prefetch "github:$repo/$rev" --json | jq -r .storePath)" "$src"
+  chmod -R u+w "$src"
+  cp "$locks/$1.Cargo.lock" "$src/Cargo.lock"
+  (cd "$src" && nix shell nixpkgs#cargo nixpkgs#rustc -c cargo update -p "$3" --precise "$4" >&2)
+  cp "$src/Cargo.lock" "$locks/$1.Cargo.lock"
+  echo "raised $3 in $1.Cargo.lock from $current to $4" >&2
+}
 if pinned lance; then
   vendor_lock lance .lance Cargo.lock
+  bump_crate lance .lance ethnum 1.5.3
 else
   echo "skip lance.Cargo.lock: $tag has no lance extension" >&2
 fi
