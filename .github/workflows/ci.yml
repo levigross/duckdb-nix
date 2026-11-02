@@ -51,8 +51,11 @@ jobs:
           sources="$(nix eval --json .#packages.x86_64-linux --apply builtins.attrNames |
             jq --raw-output '.[] | select(startswith("source-")) | ".#packages.x86_64-linux." + .')"
           # shellcheck disable=SC2086 # one argument for each line
-          nix build --no-link --print-build-logs $sources .#checks.x86_64-linux.extension-pins \
-            .#checks.x86_64-linux.previous-extension-pins-1_4 .#checks.x86_64-linux.stable-extension-pins-1_5
+          # the pins check of every version on every nixpkgs
+          pins="$(nix eval --json .#checks.x86_64-linux --apply builtins.attrNames |
+            jq --raw-output '.[] | select(test("extension-pins")) | ".#checks.x86_64-linux." + .')"
+          # shellcheck disable=SC2086 # one argument for each line
+          nix build --no-link --print-build-logs $sources $pins
 
   # CMake configures DuckDB with every extension each nixpkgs can build, which
   # finds a missing dependency or a changed option without compiling anything.
@@ -72,10 +75,22 @@ jobs:
           - nixpkgs: previous
             duckdb: "2.0"
             package: previous-dev-configure
-          # the DuckDB each older nixpkgs ships
+          # the other versions of DuckDB, on every nixpkgs
+          - nixpkgs: unstable
+            duckdb: "1.5"
+            package: dev-configure-1_5
           - nixpkgs: stable
             duckdb: "1.5"
             package: stable-dev-configure-1_5
+          - nixpkgs: previous
+            duckdb: "1.5"
+            package: previous-dev-configure-1_5
+          - nixpkgs: unstable
+            duckdb: "1.4"
+            package: dev-configure-1_4
+          - nixpkgs: stable
+            duckdb: "1.4"
+            package: stable-dev-configure-1_4
           - nixpkgs: previous
             duckdb: "1.4"
             package: previous-dev-configure-1_4
