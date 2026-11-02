@@ -178,10 +178,10 @@ gets the one in the `flake.lock` of its `duckdb-nix` input.
 
 For 1.5.2 and 1.4.3, what has been shown is that each pin is the commit the release's
 own configuration names (the `extension-pins` check), that every extension's source
-takes its patches, that delta-kernel-rs for 1.5 builds, and that httpfs compiles against
-each (a trial, not the full build). What has not been shown is the
-build of DuckDB with all of their extensions linked, its test suite, and the smoke
-test of each extension, so expect to find extensions that need more work.
+takes its patches, and that DuckDB compiles and links with all the extensions this
+nixpkgs can build for it (on 26.05 for 1.5.2, on 25.11 for 1.4.3). What has not been
+shown yet is DuckDB's own test suite on those builds and the smoke test of each
+extension, so expect to find extensions that need more work.
 
 What differs from 2.0, since each release configures its own extensions:
 
