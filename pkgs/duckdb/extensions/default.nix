@@ -156,7 +156,22 @@ let
             ARCHIVE DESTINATION "''${INSTALL_LIB_DIR}")
           EOF
         ''
+        + ''
+
+          # mysql_scanner defines it too, in a file of its own
+          sed -i 's/^string EscapeConnectionString(/static &/' src/storage/postgres_catalog.cpp
+          grep -q '^static string EscapeConnectionString(' src/storage/postgres_catalog.cpp
+        ''
         + lib.replaceStrings [ " PostgreSQL::PostgreSQL" ] [ "" ] args.postPatch;
+      };
+
+      # iceberg defines GetUCCreateView too, in a file of its own
+      unity_catalog = args: {
+        postPatch = args.postPatch + ''
+
+          sed -i 's/^string GetUCCreateView(/static &/' src/storage/uc_schema_entry.cpp
+          grep -q '^static string GetUCCreateView(' src/storage/uc_schema_entry.cpp
+        '';
       };
 
       # Before 2.0 the extension is laid out as it was in DuckDB's own tree
@@ -208,6 +223,12 @@ let
         sed -i '/^# Add rust_example as a CMake target/r ffi.cmake' CMakeLists.txt
         rm ffi.cmake
         ! grep -q 'ExternalProject_Add' CMakeLists.txt
+
+        # ducklake has a class and two functions of these names, and a symbol has no
+        # namespace but duckdb's
+        grep -rlE '\b(BaseMetadataFunction|MetadataFunctionInit|MetadataFunctionExecute)\b' src |
+          xargs sed -i -E 's/\b(BaseMetadataFunction|MetadataFunctionInit|MetadataFunctionExecute)\b/Delta\1/g'
+        ! grep -rqE '\b(BaseMetadataFunction|MetadataFunctionInit|MetadataFunctionExecute)\b' src
       '';
 
       # The 1.4 sources use the API of MySQL's own client library (my_bool is gone from it,
