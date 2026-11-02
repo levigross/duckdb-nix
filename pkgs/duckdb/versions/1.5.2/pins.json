@@ -1,0 +1,167 @@
+{
+  "avro": {
+    "hash": "sha256-ehn3sUmXq7vT4XQ07ekOZg1rX1fOAEJyudkWmr6kUDQ=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-avro",
+    "rev": "a73b60d629a92146cfd71c210936144a971783bd"
+  },
+  "aws": {
+    "hash": "sha256-lL9NnDIS57rt/I77fGZ+Fnow/XvQFrVkljaE6GFoC1I=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-aws",
+    "rev": "b2649e68341a9ee717588dd23f277904727ce793"
+  },
+  "azure": {
+    "hash": "sha256-kJ3VM81eshbrCGA+t6aCqvormPdvW7nbyorsj3w6RUE=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-azure",
+    "rev": "ea6ffae3710ec568ce08579dbfc0cddc8c759227"
+  },
+  "delta": {
+    "hash": "sha256-IZ62Rz1JrNSsWsHo0WupgrpHPZP/lLNFCmcVhg7TOVk=",
+    "kernel": {
+      "hash": "sha256-EU18+uCqMaSPmgmKi0IpRKRuK+5iE/d7z53+Md91FGA=",
+      "owner": "delta-io",
+      "repo": "delta-kernel-rs",
+      "rev": "v0.20.0"
+    },
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-delta",
+    "rev": "776be7ac2c51211e12bcd46c911ab11267cc44f3"
+  },
+  "ducklake": {
+    "hash": "sha256-o+/OisrRjdo0v024FN1JgghGL7yPOVezzlKRpO4Df28=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "ducklake",
+    "rev": "415a9ebdbd73db50a8c6ba703eb733ed16bcf33a"
+  },
+  "encodings": {
+    "hash": "sha256-JE4KSLGubCXf9hjj1pJgVOMjzySHZS6fqRJ3vJy6GSc=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-encodings",
+    "rev": "06295e77b13de65842992c82f14289ea679e4730"
+  },
+  "excel": {
+    "hash": "sha256-49wYPZu3mG/jiR+N/fitgC6vJCkWDBAf9MmsJ98hpqg=",
+    "include": "src/excel/include",
+    "owner": "duckdb",
+    "patches": true,
+    "repo": "duckdb-excel",
+    "rev": "9421a2d75bd7544336caa73e5f9e6063cc7f6992"
+  },
+  "fts": {
+    "hash": "sha256-Cm9RWizvxNwhMKyWWPrkr5SG9kU9NaUWTvWhlLbg1sg=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-fts",
+    "rev": "6814ec9a7d5fd63500176507262b0dbf7cea0095"
+  },
+  "httpfs": {
+    "hash": "sha256-7tazUGFzEQxtl3Flmi8MauWe9V7WXu/4tFpj1RE5XkQ=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-httpfs",
+    "rev": "13e18b3c9f3810334f5972b76a3acc247b28e537"
+  },
+  "iceberg": {
+    "hash": "sha256-N8BEb9Oumo442D7wu8z3DVjnNchT/PirHU6E+Euk4PY=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-iceberg",
+    "rev": "11fea8ed1d405c4cb69511d13b85d600dcdb44c4"
+  },
+  "inet": {
+    "hash": "sha256-8YeYuowhFz4XctNiAU7SG+QjnuQ416erAPjKpexk7Rw=",
+    "include": "src/include",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-inet",
+    "rev": "fe7f60bb60245197680fb07ecd1629a1dc3d91c8"
+  },
+  "lance": {
+    "hash": "sha256-jnWCEErYAxL3jlxdUb09rDisGWeboM1hJ+6OYAGYcGY=",
+    "owner": "lance-format",
+    "patches": false,
+    "repo": "lance-duckdb",
+    "rev": "1b4ef6865a8a1056c587e763366bcfda02939716"
+  },
+  "mysql_scanner": {
+    "hash": "sha256-IgZnBeeeOR1WmnWx8QM8JS36fW96szqKRZbKmbg1X/0=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-mysql",
+    "rev": "e2760cb11f13a12ce74e8c798c07c48deb97a577",
+    "submodules": {
+      "database-connector": {
+        "hash": "sha256-jNDfPgEMf3rZrimsBZMjC/HWA92MW9fLvXcTWrLVeVI=",
+        "owner": "duckdb",
+        "repo": "database-connector",
+        "rev": "431b80bd9105d37cf8557ddfff4e18a7fd2ec153"
+      }
+    }
+  },
+  "odbc_scanner": {
+    "hash": "sha256-LFIugMnZoU5lw0dCDvcyYriPm92uqG5OzOpcYX8PvWU=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "odbc-scanner",
+    "rev": "2f70a4b34c7b5aba795caa3300b208806cde24c9"
+  },
+  "postgres_scanner": {
+    "hash": "sha256-G5rhdmNLoPJXUtjkQHotGqxE/pqxa7k7SdSC/zq0D9E=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-postgres",
+    "rev": "c89234f0b1985f4ee0f52f16e742a1ab2d4ae4f0",
+    "submodules": {
+      "database-connector": {
+        "hash": "sha256-X61dAVexj7Ua+DShyhc2XvlC6oYXIBst0DKR7dONWsE=",
+        "owner": "duckdb",
+        "repo": "database-connector",
+        "rev": "746b56c4063f3682f4eb4facdc49408ed1885555"
+      }
+    }
+  },
+  "spatial": {
+    "hash": "sha256-DHL05SJqQRJmTlp2LM5+85zMMUJc3wCaKyHIfIRFHwY=",
+    "include": "src/spatial",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-spatial",
+    "rev": "dc1996bfd16bd8614fb4ccb5895b3ee0dbd4298e"
+  },
+  "sqlite_scanner": {
+    "hash": "sha256-1PYhePttl77xbYer8pdIn0dOd+s4Efzh+2UM94Jifmg=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-sqlite",
+    "rev": "a087a5878900d8bae155e97fd1b18c4cec0cca21"
+  },
+  "sqlsmith": {
+    "hash": "sha256-N3LNaX7/MG+ucoegYLlmLdUaAQnyEgU/MLYu45dXLBA=",
+    "owner": "duckdb",
+    "patches": true,
+    "repo": "duckdb-sqlsmith",
+    "rev": "e6e6750ceb91e1869b2c736abb70d818bac73e9a"
+  },
+  "unity_catalog": {
+    "hash": "sha256-JMGJCbdRkjfhp2JKpo9xkVD2opQnMKyVXcr7sE14oNo=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "unity_catalog",
+    "rev": "02024095fe6eeed6f53e78dce43e83c7424abec2"
+  },
+  "vss": {
+    "hash": "sha256-txtsTm3OGNDGI5jeMvy9JA7R6pzb22gy5ArxTVc2Usw=",
+    "owner": "duckdb",
+    "patches": false,
+    "repo": "duckdb-vss",
+    "rev": "b833341c8737fd3f3558c7720cc575ae8fc82598"
+  }
+}
