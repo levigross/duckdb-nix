@@ -1,5 +1,11 @@
 {
   "avro": {
+    "avroC": {
+      "hash": "sha256-vxs+m+2Ta0L3zd1Z1OHdlu+OFWwR3UpXIySAFJf64i8=",
+      "owner": "duckdb",
+      "repo": "duckdb-avro-c",
+      "rev": "57f149c2db5fdaa7ca5d211af96150c8801979a1"
+    },
     "hash": "sha256-ehn3sUmXq7vT4XQ07ekOZg1rX1fOAEJyudkWmr6kUDQ=",
     "owner": "duckdb",
     "patches": false,

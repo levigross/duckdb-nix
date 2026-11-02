@@ -197,6 +197,21 @@ else
   echo "skip delta-kernel-rs: $tag has no delta extension" >&2
 fi
 
+# Before 2.0 the avro extension finds avro-c as a library that vcpkg builds, from
+# DuckDB's fork of it, at the revision that the port in the registry names. Pin that
+# fork too, so Nix can build it. From 2.0 the fork is a submodule, pinned with the rest.
+if pinned avro && ! jq -e '.avro.submodules["third_party/avro-c"]' "$work/avro.json" >/dev/null; then
+  avro_repo="$(jq -r '.avro | "\(.owner)/\(.repo)"' "$work/avro.json")"
+  avro_rev="$(jq -r .avro.rev "$work/avro.json")"
+  baseline="$(raw "repos/$avro_repo/contents/vcpkg.json?ref=$avro_rev" | jq -r '.["vcpkg-configuration"].registries[0].baseline')"
+  avro_c_rev="$(raw "repos/duckdb/vcpkg-duckdb-ports/contents/ports/avro-c/portfile.cmake?ref=$baseline" | awk '$1=="REF"{print $2; exit}')"
+  [ -n "$baseline" ] && [ -n "$avro_c_rev" ] || { echo "no avro-c in the vcpkg registry of $avro_repo" >&2; exit 1; }
+  jq --arg r "$avro_c_rev" --arg h "$(prefetch duckdb/duckdb-avro-c "$avro_c_rev")" \
+    '.avro.avroC = {owner: "duckdb", repo: "duckdb-avro-c", rev: $r, hash: $h}' "$work/avro.json" >"$work/avro.json.new"
+  mv "$work/avro.json.new" "$work/avro.json"
+  echo "pinned duckdb-avro-c ${avro_c_rev:0:10}" >&2
+fi
+
 jq -S -s 'add' "$work"/*.json >"$out"
 echo "pins.json: $(jq 'length' "$out") extensions, duckdb $tag" >&2
 
