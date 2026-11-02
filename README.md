@@ -173,15 +173,16 @@ gets the one in the `flake.lock` of its `duckdb-nix` input.
 | DuckDB | ships in | pinned extensions | status |
 |---|---|---|---|
 | 2.0.0 | | 29 | built with DuckDB's own test suite and every check on all three nixpkgs |
-| 1.5.2 | nixpkgs 26.05 | 20 | new: compiles and links; tests not yet run (see below) |
-| 1.4.3 | nixpkgs 25.11 | 18 | new: compiles and links; tests not yet run (see below) |
+| 1.5.2 | nixpkgs 26.05 | 20 | built with DuckDB's own test suite and every check on 26.05 |
+| 1.4.3 | nixpkgs 25.11 | 18 | built with DuckDB's own test suite and every check on 25.11 |
 
-For 1.5.2 and 1.4.3, what has been shown is that each pin is the commit the release's
-own configuration names (the `extension-pins` check), that every extension's source
-takes its patches, and that DuckDB compiles and links with all the extensions this
-nixpkgs can build for it (on 26.05 for 1.5.2, on 25.11 for 1.4.3). What has not been
-shown yet is DuckDB's own test suite on those builds and the smoke test of each
-extension, so expect to find extensions that need more work.
+For 1.5.2 on 26.05 and 1.4.3 on 25.11, DuckDB is built with all the extensions this
+nixpkgs can build for the release and passes its own test suite, apart from the one
+test that attaches a database over HTTP, which needs network access. The
+`extension-pins` check (each pin is the commit the release's own configuration
+names), the `httpfs` check (the suite) and the `all-extensions` check (every
+extension is loaded without `INSTALL`, and its smoke test passes) pass. The other
+combinations are not built yet.
 
 What differs from 2.0, since each release configures its own extensions:
 
