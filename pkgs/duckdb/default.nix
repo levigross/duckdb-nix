@@ -26,6 +26,9 @@ let
 
   mkExtension = import ./mk-extension.nix { inherit lib; };
 
+  # DuckDB 2.0 changed how extensions are configured and linked
+  isV2 = lib.versionAtLeast versions.version "2";
+
   # callPackage adds override/overrideDerivation, which are not extensions
   available =
     removeAttrs
@@ -104,6 +107,53 @@ let
         else
           lib.genAttrs (map (ext: ext.name) withRust) (name: rustArchive available.${name});
 
+      # The rest of what the extensions need: the Rust libraries they link, and
+      # the flags their definitions add.
+      extensionFlags =
+        map (ext: lib.cmakeFeature ext.rust.cmakeVariable rustArchives.${ext.name}) withRust
+        ++ lib.concatMap (ext: ext.cmakeFlags) selected;
+
+      # 2.x
+      cmakeFlagsV2 =
+        old:
+        # nixpkgs points this at in_tree_extensions.cmake, which 2.0 reorganised
+        (lib.filter (flag: !lib.hasPrefix "-DDUCKDB_EXTENSION_CONFIGS:STRING=" flag) old.cmakeFlags)
+        ++ [
+          # 2.0 takes the release version and commit separately
+          (lib.cmakeFeature "DUCKDB_EXPLICIT_VERSION" "v${versions.version}")
+          (lib.cmakeFeature "GIT_COMMIT_HASH" versions.rev)
+          (lib.cmakeFeature "BUILD_EXTENSIONS" (lib.concatStringsSep ";" inTreeExtensions))
+          # link the extensions as well as build them
+          (lib.cmakeBool "LINK_CORE_EXTENSIONS" true)
+          # Without local_extension_repository, which would point INSTALL
+          # at a repository in the build directory that is gone at runtime.
+          (lib.cmakeFeature "DUCKDB_CAPABILITIES" "httplib;loadable_extensions")
+        ]
+        ++ lib.optionals (selected != [ ]) [
+          (lib.cmakeFeature "DUCKDB_EXTENSION_CONFIGS" "${extensionConfig}")
+          # The order here is the order DuckDB registers them in, and an
+          # extension that needs parquet or json fails to load if they
+          # come later. So the in-tree ones first, then ours with their
+          # dependencies ahead of them.
+          (lib.cmakeFeature "STATICALLY_LINK_EXTENSIONS" (
+            lib.concatStringsSep ";" (inTreeExtensions ++ map (ext: ext.name) selected)
+          ))
+        ]
+        ++ extensionFlags;
+
+      # 1.x keeps nixpkgs' flags, which already hold its version and commit and
+      # point at the in-tree extensions. The extensions are added to that list;
+      # the order of their config is the order DuckDB registers them in.
+      cmakeFlagsV1 =
+        old:
+        map (
+          flag:
+          if lib.hasPrefix "-DDUCKDB_EXTENSION_CONFIGS:STRING=" flag && selected != [ ] then
+            "${flag};${extensionConfig}"
+          else
+            flag
+        ) old.cmakeFlags
+        ++ extensionFlags;
     in
     lib.throwIf (problems != [ ]) "cannot build: ${lib.concatStringsSep "; " problems}" (
       duckdb.overrideAttrs (
@@ -116,32 +166,7 @@ let
           buildInputs = old.buildInputs ++ lib.concatMap (ext: ext.buildInputs) selected;
           nativeBuildInputs = old.nativeBuildInputs ++ lib.concatMap (ext: ext.nativeBuildInputs) selected;
 
-          cmakeFlags =
-            # nixpkgs points this at in_tree_extensions.cmake, which 2.0 reorganised
-            (lib.filter (flag: !lib.hasPrefix "-DDUCKDB_EXTENSION_CONFIGS:STRING=" flag) old.cmakeFlags)
-            ++ [
-              # 2.0 takes the release version and commit separately
-              (lib.cmakeFeature "DUCKDB_EXPLICIT_VERSION" "v${versions.version}")
-              (lib.cmakeFeature "GIT_COMMIT_HASH" versions.rev)
-              (lib.cmakeFeature "BUILD_EXTENSIONS" (lib.concatStringsSep ";" inTreeExtensions))
-              # link the extensions as well as build them
-              (lib.cmakeBool "LINK_CORE_EXTENSIONS" true)
-              # Without local_extension_repository, which would point INSTALL
-              # at a repository in the build directory that is gone at runtime.
-              (lib.cmakeFeature "DUCKDB_CAPABILITIES" "httplib;loadable_extensions")
-            ]
-            ++ lib.optionals (selected != [ ]) [
-              (lib.cmakeFeature "DUCKDB_EXTENSION_CONFIGS" "${extensionConfig}")
-              # The order here is the order DuckDB registers them in, and an
-              # extension that needs parquet or json fails to load if they
-              # come later. So the in-tree ones first, then ours with their
-              # dependencies ahead of them.
-              (lib.cmakeFeature "STATICALLY_LINK_EXTENSIONS" (
-                lib.concatStringsSep ";" (inTreeExtensions ++ map (ext: ext.name) selected)
-              ))
-            ]
-            ++ map (ext: lib.cmakeFeature ext.rust.cmakeVariable rustArchives.${ext.name}) withRust
-            ++ lib.concatMap (ext: ext.cmakeFlags) selected;
+          cmakeFlags = if isV2 then cmakeFlagsV2 old else cmakeFlagsV1 old;
 
           # doInstallCheck stays as nixpkgs sets it, so DuckDB's own test suite runs.
           installCheckPhase = tests.installCheckPhase old.installCheckPhase;
