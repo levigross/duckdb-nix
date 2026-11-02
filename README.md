@@ -9,8 +9,9 @@ binary, which does not suit Nix, a sandbox, or a library that is linked rather t
 
 Status: DuckDB 2.0.0, x86_64-linux with glibc. 28 of the 29 out-of-tree extensions
 link and pass their checks on nixpkgs unstable, and most of them on the two latest
-stable releases (see [nixpkgs versions](#nixpkgs-versions)). See also
-[Not done](#not-done).
+stable releases (see [nixpkgs versions](#nixpkgs-versions)). The DuckDB that each of
+those ships, 1.5.2 and 1.4.3, is available too, with the extensions its release has
+(see [DuckDB versions](#duckdb-versions)). See also [Not done](#not-done).
 
 ## Using it
 
@@ -27,6 +28,10 @@ nix build github:levigross/duckdb-nix#duckdb-all    # all 28
 For 26.05 and 25.11 the names carry a prefix: `#stable-duckdb-spatial`,
 `#previous-duckdb-all`. An extension that a nixpkgs cannot build has no package there.
 `#duckdb` is DuckDB 2.0.0 with none, as nixpkgs would build it.
+
+The other DuckDB versions have the line in the name: `#duckdb-1_4-httpfs`,
+`#previous-duckdb-1_4-all`, `#stable-duckdb-1_5-all` (see
+[DuckDB versions](#duckdb-versions)).
 
 ### In your flake
 
@@ -70,6 +75,32 @@ perSystem = { pkgs, ... }: {
   packages.default = (inputs.duckdb-nix.lib.duckdb pkgs).withExtensions (e: [ e.zipfs ]);
 };
 ```
+
+### A different DuckDB version
+
+DuckDB 2.0.0 is the default. The DuckDB that nixpkgs 26.05 and 25.11 ship, 1.5.2 and
+1.4.3, can have the extensions too. Ask for the line (`"1.5"`, `"1.4"`) or the release
+(`"1.5.2"`, `"1.4.3"`; they are the same build):
+
+```nix
+let
+  duckdbs = duckdb-nix.lib.duckdbVersions pkgs; # as lib.duckdb is, for every version
+  duckdb = duckdbs."1.4";                       # 1.4.3; duckdb.version says which
+in
+duckdb.withExtensions (e: [ e.httpfs e.spatial ])
+```
+
+| | |
+|---|---|
+| flake | `duckdb-nix.lib.duckdbVersions pkgs` as above; `lib.duckdb pkgs` is still 2.0.0 |
+| overlay | `pkgs.duckdbVersions."1.4"`; `pkgs.duckdb` is still 2.0.0 |
+| command line | `nix shell github:levigross/duckdb-nix#duckdb-1_4-httpfs`, or `#previous-duckdb-1_4-all` to build it with nixpkgs 25.11 (`#stable-duckdb-1_5-all` for 1.5 with 26.05) |
+| Rust or C++ | `lib.getLib duckdb` and `lib.getDev duckdb` of the one you chose, as in [From Rust or C++](#from-rust-or-c); the `duckdb` crate must be the one for that DuckDB |
+
+`map (e: e.name) duckdb.linkableExtensions` lists what that version can link with your
+nixpkgs. An extension its release does not have fails with a message that says so, not
+with an evaluation error. What differs from 2.0, and what has been built and tested, is
+in [DuckDB versions](#duckdb-versions).
 
 ### NixOS and home-manager
 
@@ -133,6 +164,47 @@ the overlay works on whichever nixpkgs you apply it to.
 An extension that a nixpkgs cannot build says why when you ask for it, and is left
 out of `duckdb-all` and the checks. Nothing is backported; the answer is a newer nixpkgs.
 
+## DuckDB versions
+
+2.0.0 is the default, and [another is asked for](#a-different-duckdb-version) by its
+line or release. A line has one pinned release, the one nixpkgs ships, and a project
+gets the one in the `flake.lock` of its `duckdb-nix` input.
+
+| DuckDB | ships in | pinned extensions | status |
+|---|---|---|---|
+| 2.0.0 | | 29 | built with DuckDB's own test suite and every check on nixpkgs unstable and 26.05 |
+| 1.5.2 | nixpkgs 26.05 | 20 | new: not yet built through (see below) |
+| 1.4.3 | nixpkgs 25.11 | 18 | new: not yet built through (see below) |
+
+For 1.5.2 and 1.4.3, what has been shown is that each pin is the commit the release's
+own configuration names (the `extension-pins` check), that every extension's source
+takes its patches, that delta-kernel-rs for 1.5 builds, and that httpfs compiles against
+each (a trial, not the full build). What has not been shown is the
+build of DuckDB with all of their extensions linked, its test suite, and the smoke
+test of each extension, so expect to find extensions that need more work.
+
+What differs from 2.0, since each release configures its own extensions:
+
+- **Not in the release:** `lance` before 1.4.5 (so not in 1.4.3), `odbc_scanner`
+  before 1.5, `quack` before 1.5.5, `glue` and `legacy_parser` before 2.0. Asking for
+  one says so.
+- **Not packaged yet:** `vortex`, whose Rust is a git submodule until 1.5.5 and needs
+  its own packaging, and the community extensions, whose releases for these versions
+  are not pinned. Both say so when asked for.
+- **spatial** for 1.4 uses the file handle interface of GDAL before 3.13, so it builds
+  with the GDAL of nixpkgs 25.11 and 26.05, and not with unstable's. For 1.5 and 2.0
+  it is the other way round.
+- **avro and mysql_scanner** link nixpkgs' libraries instead of the ones vcpkg builds
+  for the release, and **delta** builds delta-kernel-rs at the release the extension
+  names, with the lock file that this repository generates (the kernel does not commit
+  one before 0.21).
+- The check with a Rust program is for 2.0 only: which `duckdb` crate goes with 1.4.3
+  and 1.5.2 is not established.
+
+Only the version a nixpkgs ships is built and tested on that nixpkgs. The other
+combinations evaluate, and CMake configures the two that are tested; the rest are not
+built.
+
 ## The extensions
 
 | | |
@@ -160,7 +232,7 @@ Asking for an extension that needs another gets it too (`iceberg` brings `avro` 
 
 ## How it works
 
-- `scripts/update.sh [tag]` computes every pin from an upstream release: DuckDB's
+- `scripts/update.sh [tag]` computes every pin from an upstream release into `pkgs/duckdb/versions/<version>/`, one directory for each DuckDB version: DuckDB's
   commit and hash, each extension's commit and hash, the submodules they need, the
   Rust lock files and the hashes of their git dependencies. Nothing is copied from
   another repository.
@@ -217,6 +289,7 @@ suite runs on the result, as it does for the others.
 | `httpfs` | reads a CSV over HTTP; the same query fails on plain DuckDB |
 | `all-extensions` | every extension is loaded without `INSTALL`, and each passes an offline smoke test (real round trips for vortex, lance and delta; a failed connection from libpq and MariaDB) |
 | `rust-consumer` | a Rust program using the `duckdb` crate, linked against `libduckdb`, finds the extensions; the same binary against plain DuckDB does not |
+| `<check>-1_4`, `<check>-1_5` | `extension-pins`, `httpfs` and `all-extensions` for the DuckDB that nixpkgs 25.11 and 26.05 ship, on that nixpkgs (`previous-all-extensions-1_4`, `stable-all-extensions-1_5`) |
 | `example-extension` | the extension of `templates/extension` is linked into DuckDB as a user of the flake would, is loaded without `INSTALL`, and passes its smoke test (on unstable only, since the mechanism is the same for every nixpkgs) |
 
 Counting what is loaded is the check that matters. CMake carries on without an
@@ -227,13 +300,13 @@ with 12 cores for all three nixpkgs. A free hosted GitHub runner has 4 cores and
 six-hour limit, so run them yourself with `nix flake check`. GitHub Actions
 (`.github/workflows/ci.yml`) runs what does not need a DuckDB build: style, evaluation
 for every system without import from derivation, every extension's source and the pins
-check, and CMake configuring DuckDB for each nixpkgs.
+check, and CMake configuring DuckDB for each nixpkgs and for the DuckDB it ships.
 
 DuckDB's own test suite runs in `installCheckPhase`, as in nixpkgs. Some tests cannot
 pass in this build, and each is listed with its reason in the build log (and in
 `pkgs/duckdb/extensions/default.nix`): tests that need the network, tests that assert
 an extension is absent, and C++ tests that cannot run with `postgres_scanner` or
-`spatial` loaded. Tests that need something different run in their own invocation instead.
+`spatial` loaded, or with `psql` linked (it switches its grammar on in every connection). Tests that need something different run in their own invocation instead.
 
 ## Developing
 
@@ -252,6 +325,11 @@ an extension is absent, and C++ tests that cannot run with `postgres_scanner` or
   backend, and duckdb-python 2.0.0 uses nanobind, so it needs a port. Until then it
   does not evaluate with the overlay (which removes the hash it needs, since a Python
   module for another DuckDB version would be wrong), and `lib.duckdb` leaves it alone.
+  For 1.4.3 and 1.5.2 no port is needed, since nixpkgs' module is that version and
+  pybind11 is what it uses, but it still builds its own DuckDB, which has to be given
+  the extensions: not done either.
+- vortex for 1.4 and 1.5 (its Rust is a git submodule before 1.5.5), and the community
+  extensions for them (only zipfs, and psql for 1.5.2, have a release that matches).
 - Fully static (`pkgsStatic`, musl) builds.
 - Other platforms. Only x86_64-linux has been built; aarch64-linux and
   aarch64-darwin are untried.
