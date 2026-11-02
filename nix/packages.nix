@@ -25,7 +25,7 @@ _:
       # DuckDB of one version: by itself, with every extension this nixpkgs can
       # link, and with each of them alone. `tag` is "" for the default version.
       packagesOfVersion =
-        tag: duckdb:
+        tag: pythonPackages: duckdb:
         let
           all = duckdb.withExtensions (_: duckdb.linkableExtensions);
         in
@@ -40,6 +40,10 @@ _:
         // {
           "duckdb${tag}" = duckdb;
           "duckdb${tag}-all" = all;
+
+          # the Python module, built with the same DuckDB: plain, and with every extension
+          "python3-duckdb${tag}" = duckdb.pythonModule pythonPackages;
+          "python3-duckdb${tag}-all" = all.pythonModule pythonPackages;
 
           # Development only: stop after CMake configures
           # build everything and keep going past failures, to see every error
@@ -65,8 +69,10 @@ _:
             line: other: builtins.match "[0-9]+\\.[0-9]+" line != null && other.version != duckdb.version
           ) nixpkgs.duckdbVersions;
         in
-        packagesOfVersion "" duckdb
-        // lib.concatMapAttrs (line: other: packagesOfVersion (lineTag line) other) otherLines
+        packagesOfVersion "" nixpkgs.python3Packages duckdb
+        // lib.concatMapAttrs (
+          line: other: packagesOfVersion (lineTag line) nixpkgs.python3Packages other
+        ) otherLines
         // {
           default = duckdb;
 

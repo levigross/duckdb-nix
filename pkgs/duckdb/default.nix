@@ -14,6 +14,8 @@ let
   versions = lib.importJSON ./versions/${release}/version.json;
   pins = lib.importJSON ./versions/${release}/pins.json;
   rustLocks = ./versions/${release}/rust;
+  # duckdb-python at the tag of this release, which the Python module is built from
+  pythonPin = lib.importJSON ./versions/${release}/python.json;
   # the extensions the community registry published no build of for this release,
   # with the reason; only the releases that have such an extension have the file
   unavailable = lib.optionalAttrs (builtins.pathExists ./versions/${release}/unavailable.json) (
@@ -175,6 +177,17 @@ let
         ) old.cmakeFlags
         ++ extensionFlags;
 
+      pythonBuild = {
+        inherit (versions) version rev;
+        src = duckdbSrc;
+        python = pythonPin;
+        inherit
+          selected
+          extensionConfig
+          extensionFlags
+          inTreeExtensions
+          ;
+      };
     in
     lib.throwIf (problems != [ ]) "cannot build: ${lib.concatStringsSep "; " problems}" (
       duckdb.overrideAttrs (
@@ -209,6 +222,11 @@ let
               # the configuration the test suite is run with
               inherit (tests) testConfig;
               withExtensions = select: mkDuckdb (select available);
+              # What the Python module needs to build the same DuckDB: its sources, extensions
+              # and flags. The module takes it and a set of Python packages, as in
+              # `(duckdb.withExtensions ...).pythonModule python3Packages`.
+              inherit pythonBuild;
+              pythonModule = pythonPackages: pythonPackages.callPackage ./python.nix { build = pythonBuild; };
             };
         }
         # Only set when there is something to add: the build without extensions
