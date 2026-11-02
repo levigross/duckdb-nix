@@ -145,7 +145,7 @@ community=(
 # the release it is on now, the latest.
 registry_workflow=.github/workflows/generate_docs.yml
 registry_rev() { # tag
-  local sha newer= found=
+  local sha newer='' found=''
   while read -r sha; do
     if raw "repos/duckdb/community-extensions/contents/$registry_workflow?ref=$sha" | grep -q "releases/download/$1/"; then
       found="$sha"

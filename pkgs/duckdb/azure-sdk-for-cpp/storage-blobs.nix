@@ -60,11 +60,8 @@ stdenv.mkDerivation (finalAttrs: {
     ];
   };
 
-  meta = (
-    meta
-    // {
-      description = "Azure Storage Blobs Client Library for C++";
-      changelog = "https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/storage/azure-storage-blobs/CHANGELOG.md";
-    }
-  );
+  meta = meta // {
+    description = "Azure Storage Blobs Client Library for C++";
+    changelog = "https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/storage/azure-storage-blobs/CHANGELOG.md";
+  };
 })

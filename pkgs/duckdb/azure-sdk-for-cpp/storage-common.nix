@@ -66,11 +66,8 @@ stdenv.mkDerivation (finalAttrs: {
     ];
   };
 
-  meta = (
-    meta
-    // {
-      description = "Azure Storage Common Client Library for C++";
-      changelog = "https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/storage/azure-storage-common/CHANGELOG.md";
-    }
-  );
+  meta = meta // {
+    description = "Azure Storage Common Client Library for C++";
+    changelog = "https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/storage/azure-storage-common/CHANGELOG.md";
+  };
 })

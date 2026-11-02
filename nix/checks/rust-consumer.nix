@@ -15,7 +15,7 @@ let
   # (scripts/update.sh).
   example = ../../examples/rust-consumer;
   state = ../../pkgs/duckdb/versions + "/${duckdb.version}";
-  crate = (lib.importJSON (state + "/rust-consumer.json")).crate;
+  inherit ((lib.importJSON (state + "/rust-consumer.json"))) crate;
   older = builtins.pathExists (state + "/rust-consumer.json");
   olderSrc = pkgs.runCommand "rust-consumer-${duckdb.version}-source" { } ''
     cp -r ${example} $out

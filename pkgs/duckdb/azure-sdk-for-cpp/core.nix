@@ -67,11 +67,8 @@ stdenv.mkDerivation (finalAttrs: {
   # Unless issues arise, it does not seem worth the effort.
   doCheck = false;
 
-  meta = (
-    meta
-    // {
-      description = "Azure SDK Core Library for C++";
-      changelog = "https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/core/azure-core/CHANGELOG.md";
-    }
-  );
+  meta = meta // {
+    description = "Azure SDK Core Library for C++";
+    changelog = "https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/core/azure-core/CHANGELOG.md";
+  };
 })

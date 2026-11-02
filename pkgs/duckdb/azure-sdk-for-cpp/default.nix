@@ -14,7 +14,7 @@
 lib.makeScope newScope (
   self:
   let
-    callPackage = self.callPackage;
+    inherit (self) callPackage;
   in
   {
     inherit

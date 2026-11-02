@@ -62,11 +62,8 @@ stdenv.mkDerivation (finalAttrs: {
     ];
   };
 
-  meta = (
-    meta
-    // {
-      description = "Azure Identity client library for C++";
-      changelog = "https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/identity/azure-identity/CHANGELOG.md";
-    }
-  );
+  meta = meta // {
+    description = "Azure Identity client library for C++";
+    changelog = "https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/identity/azure-identity/CHANGELOG.md";
+  };
 })

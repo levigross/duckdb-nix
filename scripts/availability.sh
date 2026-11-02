@@ -12,9 +12,10 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-nix eval --raw --impure --expr '
+# shellcheck disable=SC2016 # the ${} are Nix's
+AVAILABILITY_ROOT="$root" nix eval --raw --impure --expr '
   let
-    flake = builtins.getFlake "path:'"$root"'";
+    flake = builtins.getFlake "path:${builtins.getEnv "AVAILABILITY_ROOT"}";
     nixpkgsNames = {
       unstable = "nixpkgs";
       "26.05" = "nixpkgs-stable";

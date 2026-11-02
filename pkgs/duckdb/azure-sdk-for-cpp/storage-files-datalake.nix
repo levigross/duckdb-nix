@@ -64,11 +64,8 @@ stdenv.mkDerivation (finalAttrs: {
     ];
   };
 
-  meta = (
-    meta
-    // {
-      description = "Azure Storage Files Data Lake Client Library for C++";
-      changelog = "https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/storage/azure-storage-files-datalake/CHANGELOG.md";
-    }
-  );
+  meta = meta // {
+    description = "Azure Storage Files Data Lake Client Library for C++";
+    changelog = "https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/storage/azure-storage-files-datalake/CHANGELOG.md";
+  };
 })
