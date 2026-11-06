@@ -4,6 +4,7 @@
 
 let
   inherit (pkgs) chdb;
+  rust = import ../rust.nix { inherit pkgs chdb; };
   chdbPython = chdb.pythonModule pkgs.python3Packages;
   withChdb = pkgs.python3.withPackages (_: [ chdbPython ]);
   # the same interpreter and the same dependencies, without chDB
@@ -49,8 +50,18 @@ in
 
     touch $out
   '';
-  # A Rust program linked against libchdb through the chdb-rust crate.
-  rust-consumer = import ./rust-consumer.nix { inherit pkgs chdb; };
+
+  # A Rust program linked against libchdb through the chdb-rust crate, built with each of the
+  # TLS stacks that people need: the build script of the crate has reqwest, with OpenSSL, and
+  # a patched crate gives it rustls instead.
+  rust-consumer = import ./rust-consumer.nix {
+    inherit pkgs;
+    program = rust.program { tls = "openssl"; };
+  };
+  rust-consumer-rustls = import ./rust-consumer.nix {
+    inherit pkgs;
+    program = rust.program { tls = "rustls"; };
+  };
 
   # The Python module answers, hands a result to pandas, and keeps a table in a session
   # that is opened again. The same script without the module must fail.

@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+[features]
+# keep a durable object in S3, or in a store that speaks its protocol: the crate does that with
+# ureq and rustls, so this is the one place the program itself needs TLS
+durable-s3 = ["chdb-rust/durable-s3"]
+
 [dependencies]
 # libchdb is the one Nix builds: CHDB_LIB_DIR and CHDB_INCLUDE_DIR make the build script of
 # the crate use it instead of downloading its own. Without arrow, which the program does not use.
