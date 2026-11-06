@@ -1,0 +1,11 @@
+{
+  "hash": "sha256-59gDCGvYNtt+axMPU/BaZJlub+meHgXBGy+72jCGIdU=",
+  "nodeAddonApi": {
+    "hash": "sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==",
+    "url": "https://registry.npmjs.org/node-addon-api/-/node-addon-api-7.1.1.tgz",
+    "version": "7.1.1"
+  },
+  "rev": "78e6aa42907428b0b50fde2c0d107f6d8acb2bfa",
+  "tag": "v0.3.0",
+  "version": "0.3.0"
+}
