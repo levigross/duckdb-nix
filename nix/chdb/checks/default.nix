@@ -49,6 +49,8 @@ in
 
     touch $out
   '';
+  # A Rust program linked against libchdb through the chdb-rust crate.
+  rust-consumer = import ./rust-consumer.nix { inherit pkgs chdb; };
 
   # The Python module answers, hands a result to pandas, and keeps a table in a session
   # that is opened again. The same script without the module must fail.
