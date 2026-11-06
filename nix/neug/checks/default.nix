@@ -42,4 +42,22 @@ in
 
     installPhase = "touch $out";
   };
+
+  # The addon for Node.js, in the real node of nixpkgs: it loads, opens a database, loads the
+  # extensions by name and answers. Without the package on the path of node it must not be
+  # found, and a wrong query must throw (the script asserts that).
+  nodejs = pkgs.runCommand "neug-nodejs-check" { nativeBuildInputs = [ pkgs.nodejs ]; } ''
+    export HOME=$TMPDIR
+    cd $TMPDIR
+
+    export NODE_PATH=${neug.nodejs}/lib/node_modules
+    node ${./node-smoke.js} ${extensions}
+
+    if NODE_PATH= node -e "require('neug')" >/dev/null 2>&1; then
+      echo "require('neug') worked without the package on the path" >&2
+      exit 1
+    fi
+
+    touch $out
+  '';
 }
