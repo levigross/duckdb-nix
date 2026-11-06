@@ -31,4 +31,46 @@ in
 
     touch $out
   '';
+
+  # The unit tests of zvec itself, upstream's own, for the libraries this package builds:
+  # ailego (60 tests), core (34) and turbo (1). The same source, patches and flags as the
+  # package, with the test targets built and run by ctest. The 59 tests of the database layer
+  # (tests/db) are of code that is not part of this package: they link the library zvec, which
+  # needs Arrow 21 (built from source with downloaded dependencies), RocksDB and protobuf. The
+  # extension of NeuG does not use that layer either. Nothing else is left out.
+  tests = zvec.overrideAttrs (old: {
+    pname = "zvec-tests";
+    doCheck = true;
+
+    # the targets are the test programs, named like their files; the default build phase stays,
+    # since the generator (Ninja) is only chosen for it
+    ninjaFlags = [ ];
+
+    # the googletest of zvec (1.10.0) uses uintptr_t without including <cstdint>, which GCC 15 and
+    # later no longer let pass
+    postPatch = old.postPatch + ''
+      substituteInPlace thirdparty/googletest/googletest-1.10.0/googletest/src/gtest-death-test.cc \
+        --replace-fail '# include <limits.h>' '# include <limits.h>
+      # include <cstdint>'
+    '';
+    preBuild = ''
+      ninjaFlagsArray+=( $(find ../tests/ailego ../tests/core ../tests/turbo -name '*_test.cc' -printf '%f\n' \
+        | sed 's/\.cc$//' | sort -u) )
+    '';
+
+    checkPhase = ''
+      runHook preCheck
+      export LD_LIBRARY_PATH=$PWD/lib
+      # every directory is run before the check fails, to see all that fails
+      status=0
+      for d in ailego core turbo; do
+        echo "=== $d: $(ctest --test-dir tests/$d -N | grep -c 'Test *#') tests"
+        ctest --test-dir tests/$d -j4 --timeout 1500 --output-on-failure --no-tests=error || status=1
+      done
+      [ $status = 0 ]
+      runHook postCheck
+    '';
+
+    installPhase = "touch $out";
+  });
 }
