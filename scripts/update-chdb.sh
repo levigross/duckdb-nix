@@ -72,12 +72,12 @@ wrapperwheel="$(pin "$wheel" "https://github.com/$wrapper/releases/download/$wra
 
 # The sources of the upstream test suites (nix/chdb/checks/tests.nix), each hashed here from the
 # files themselves: the Python part at its tag; the directories of chdb-core that hold the C
-# examples, what they need and the tests of its Python module (a sparse checkout: the repository
-# is a gigabyte); the nanoarrow that the examples download when they run, at the version their
+# examples, what they need (the parser sources that check_statement_coverage.py reads among it)
+# and the tests of its Python module (a sparse checkout: the repository is a gigabyte); the nanoarrow that the examples download when they run, at the version their
 # script names; and the crate chdb-rust at the version of the Rust example.
 chdb_src_hash="$(nix flake prefetch "github:$wrapper/$wrapper_tag" --json | jq -r .hash)"
 
-core_paths=$'examples\nprograms/local\nchdb/build\ntests'
+core_paths=$'examples\nprograms/local\nchdb/build\ntests\nsrc/Parsers'
 nix run nixpkgs#nix-prefetch-git -- --url "https://github.com/$core" --rev "$core_tag" \
   --sparse-checkout "$core_paths" --quiet >"$work/core-prefetch.json"
 core_src_hash="$(nix hash convert --hash-algo sha256 --to sri "$(jq -r .sha256 "$work/core-prefetch.json")")"

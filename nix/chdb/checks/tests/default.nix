@@ -9,5 +9,6 @@ let
   pin = pkgs.lib.importJSON ../../../../pkgs/chdb/pin.json;
 in
 {
+  core-c-tests = import ./core-c.nix { inherit pkgs chdb pin; };
   rust-tests = import ./rust.nix { inherit pkgs chdb pin; };
 }

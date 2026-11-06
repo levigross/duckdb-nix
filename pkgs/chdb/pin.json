@@ -28,12 +28,13 @@
       "hash": "sha256-wJR1ITT2KjIJk9qd+TP1wdk3AbhRZo9oZWRyCG/CjOg="
     },
     "core": {
-      "hash": "sha256-0WC2k8U2RA+l1yPzn31pHcrYMBedbjnwZDhvboQzW+Y=",
+      "hash": "sha256-ZaPxN/DjtIBZfIG/yaFlxJQLS7dl71TbUxfdJALxayo=",
       "sparseCheckout": [
         "examples",
         "programs/local",
         "chdb/build",
-        "tests"
+        "tests",
+        "src/Parsers"
       ]
     },
     "nanoarrow": {
