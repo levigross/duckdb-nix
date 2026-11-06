@@ -15,7 +15,7 @@
 #   pkgs/duckdb/versions/<version>/loadable.json  a community extension that cannot be linked in: its sources,
 #                                                 and the registry's own build, for each system
 #
-#   scripts/update.sh [tag]     # default: the latest DuckDB release
+#   scripts/update-duckdb.sh [tag]     # default: the latest DuckDB release
 #
 # Needs: gh, jq, nix. Submodules other than extension-ci-tools (which only CI
 # uses) are pinned too, since GitHub tarballs do not include submodules.
@@ -434,7 +434,7 @@ crate_for() { # version
     return
   fi
   code=$((major * 10000 + minor * 100 + patch))
-  curl -fsSL -A "duckdb-nix update.sh" "https://crates.io/api/v1/crates/duckdb/versions?per_page=100" |
+  curl -fsSL -A "duckdb-nix update-duckdb.sh" "https://crates.io/api/v1/crates/duckdb/versions?per_page=100" |
     jq -r --arg p "1.$code." '[.versions[].num | select(startswith($p))] | sort_by(split(".") | map(tonumber)) | last // empty'
 }
 release_major="${tag#v}"

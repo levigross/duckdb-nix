@@ -12,7 +12,7 @@ let
 
   # The program is written for the `duckdb` crate of DuckDB 2.0. The state of an older
   # release says which crate goes with it and has the lock file resolved for it
-  # (scripts/update.sh).
+  # (scripts/update-duckdb.sh).
   example = ../../../examples/rust-consumer;
   state = ../../../pkgs/duckdb/versions + "/${duckdb.version}";
   inherit ((lib.importJSON (state + "/rust-consumer.json"))) crate;

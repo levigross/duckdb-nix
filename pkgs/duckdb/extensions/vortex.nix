@@ -20,7 +20,7 @@
 
 let
   # The lock upstream commits pins an older vortex than Cargo.toml asks for, so
-  # scripts/update.sh re-resolves it, as upstream's online `cargo build` does on
+  # scripts/update-duckdb.sh re-resolves it, as upstream's online `cargo build` does on
   # every build. It replaces the committed one before the build checks the two.
   lock = lib.importTOML lockFile;
 

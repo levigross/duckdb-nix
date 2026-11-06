@@ -376,7 +376,7 @@ through Python, and the aws extension of 1.5.2 and 1.4.3 was not read. Until the
 itself is patched, open one database or connection before starting threads that open more.
 
 The `duckdb` crate that goes with a release is the one named in the table. For 1.5.2 and
-2.0.0 it is numbered `1.<major * 10000 + minor * 100 + patch>.<n>`; `update.sh` finds it.
+2.0.0 it is numbered `1.<major * 10000 + minor * 100 + patch>.<n>`; `scripts/update-duckdb.sh` finds it.
 
 ## The extensions
 
@@ -407,7 +407,7 @@ Asking for an extension that needs another gets it too (`iceberg` brings `avro` 
 
 ## How it works
 
-- `scripts/update.sh [tag]` computes every pin from an upstream release into `pkgs/duckdb/versions/<version>/`, one directory for each DuckDB version: DuckDB's
+- `scripts/update-duckdb.sh [tag]` computes every pin from an upstream release into `pkgs/duckdb/versions/<version>/`, one directory for each DuckDB version: DuckDB's
   commit and hash, each extension's commit and hash, the submodules they need, the
   Rust lock files and the hashes of their git dependencies. Nothing is copied from
   another repository.
