@@ -2,6 +2,9 @@
 //! it back, and expects a wrong query to be an error. It exits with a non-zero status when
 //! anything is not as expected.
 
+#[cfg(feature = "durable-s3")]
+mod s3;
+
 use chdb_rust::arg::Arg;
 use chdb_rust::error::Error;
 use chdb_rust::execute;
@@ -30,6 +33,33 @@ fn expect(what: &str, got: Result<String, Error>, want: &str) -> bool {
 }
 
 fn main() {
+    // `--s3 <url> write|read`: a durable object in a store over TLS
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("--s3") {
+        #[cfg(feature = "durable-s3")]
+        {
+            let (url, action) = (args.get(1), args.get(2));
+            match (url, action) {
+                (Some(url), Some(action)) => match s3::run(url, action) {
+                    Ok(()) => return,
+                    Err(message) => {
+                        eprintln!("{message}");
+                        std::process::exit(1);
+                    }
+                },
+                _ => {
+                    eprintln!("usage: chdb-rust-consumer --s3 <url> write|read");
+                    std::process::exit(2);
+                }
+            }
+        }
+        #[cfg(not(feature = "durable-s3"))]
+        {
+            eprintln!("this build has no durable-s3 feature");
+            std::process::exit(2);
+        }
+    }
+
     let dir = std::env::temp_dir().join(format!("chdb-rust-consumer-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("a directory for the Parquet file");
     let parquet = dir.join("t.parquet");

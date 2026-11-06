@@ -63,6 +63,16 @@ in
     program = rust.program { tls = "rustls"; };
   };
 
+  # The same program keeps a durable object in an S3-compatible store over TLS (rustls in the
+  # crate), with a stand-in store that has a certificate of its own.
+  rust-consumer-s3 = import ./rust-consumer-s3.nix {
+    inherit pkgs;
+    program = rust.program {
+      tls = "rustls";
+      durableS3 = true;
+    };
+  };
+
   # The Python module answers, hands a result to pandas, and keeps a table in a session
   # that is opened again. The same script without the module must fail.
   python =
