@@ -39,6 +39,7 @@
         ./nix/duckdb
         ./nix/chdb
         ./nix/zvec
+        ./nix/neug
       ];
     };
 }

@@ -9,5 +9,6 @@
     (import ./duckdb/overlay.nix)
     (import ./chdb/overlay.nix)
     (import ./zvec/overlay.nix)
+    (import ./neug/overlay.nix)
   ];
 }
