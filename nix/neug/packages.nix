@@ -11,7 +11,7 @@ _:
       packages = forEachNixpkgs (
         nixpkgs:
         lib.optionalAttrs (lib.meta.availableOn nixpkgs.stdenv.hostPlatform nixpkgs.neug) {
-          inherit (nixpkgs) neug;
+          inherit (nixpkgs) neug neug-c;
 
           # the addon for Node.js, built with the library
           neug-nodejs = nixpkgs.neug.nodejs;

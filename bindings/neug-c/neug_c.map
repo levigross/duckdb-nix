@@ -1,0 +1,6 @@
+NEUG_C_1 {
+  global:
+    neug_*;
+  local:
+    *;
+};

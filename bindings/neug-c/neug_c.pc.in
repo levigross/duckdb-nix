@@ -1,0 +1,6 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+Name: neug_c
+Description: A C interface to NeuG, the embedded graph database
+Version: @PROJECT_VERSION@
+Libs: -L${prefix}/lib -lneug_c
+Cflags: -I${prefix}/include
