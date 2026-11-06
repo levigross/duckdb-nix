@@ -70,6 +70,30 @@ wheel="$(jq -r '[.assets[] | select(.name | test("^chdb-.*-py3-none-any\\.whl$")
 digest="$(jq -r --arg n "$wheel" '.assets[] | select(.name == $n) | .digest | sub("^sha256:"; "")' <<<"$wrapper_assets")"
 wrapperwheel="$(pin "$wheel" "https://github.com/$wrapper/releases/download/$wrapper_tag/$wheel" "$digest")"
 
+# The sources of the upstream test suites (nix/chdb/checks/tests.nix), each hashed here from the
+# files themselves: the Python part at its tag; the directories of chdb-core that hold the C
+# examples, what they need and the tests of its Python module (a sparse checkout: the repository
+# is a gigabyte); the nanoarrow that the examples download when they run, at the version their
+# script names; and the crate chdb-rust at the version of the Rust example.
+chdb_src_hash="$(nix flake prefetch "github:$wrapper/$wrapper_tag" --json | jq -r .hash)"
+
+core_paths=$'examples\nprograms/local\nchdb/build\ntests'
+nix run nixpkgs#nix-prefetch-git -- --url "https://github.com/$core" --rev "$core_tag" \
+  --sparse-checkout "$core_paths" --quiet >"$work/core-prefetch.json"
+core_src_hash="$(nix hash convert --hash-algo sha256 --to sri "$(jq -r .sha256 "$work/core-prefetch.json")")"
+
+na_version="$(gh api "repos/$core/contents/examples/runArrowQueryTest.sh?ref=$core_tag" -H 'Accept: application/vnd.github.raw' |
+  sed -n 's/^NANOARROW_VER="\(.*\)"/\1/p')"
+na_url="https://github.com/apache/arrow-nanoarrow/releases/download/apache-arrow-nanoarrow-${na_version}/apache-arrow-nanoarrow-${na_version}.tar.gz"
+na_hash="$(nix store prefetch-file --json "$na_url" | jq -r .hash)"
+
+rust_version="$(awk '/^name = "chdb-rust"/ {getline; gsub(/[^0-9.]/, ""); print}' "$root/examples/chdb-rust-consumer/Cargo.lock")"
+rust_url="https://crates.io/api/v1/crates/chdb-rust/$rust_version/download"
+nix store prefetch-file --json "$rust_url" >"$work/crate.json"
+rust_hash="$(jq -r .hash "$work/crate.json")"
+# its own lock file, kept in the repository because a build reads it at evaluation time
+tar -xzOf "$(jq -r .storePath "$work/crate.json")" "chdb-rust-$rust_version/Cargo.lock" >"$work/chdb-rust.Cargo.lock"
+
 tmp="$work/pin.json"
 jq -S -n \
   --arg version "${core_tag#v}" \
@@ -78,10 +102,26 @@ jq -S -n \
   --arg wrapperTag "$wrapper_tag" \
   --argjson wrapperWheel "$wrapperwheel" \
   --argjson systems "$(jq -s 'add' <<<"$systems")" \
+  --arg chdbSrcHash "$chdb_src_hash" \
+  --arg coreSrcHash "$core_src_hash" \
+  --arg corePaths "$core_paths" \
+  --arg naVersion "$na_version" \
+  --arg naUrl "$na_url" \
+  --arg naHash "$na_hash" \
+  --arg rustVersion "$rust_version" \
+  --arg rustUrl "$rust_url" \
+  --arg rustHash "$rust_hash" \
   '{version: $version, tag: $coreTag, repo: "chdb-io/chdb-core",
     wrapper: {version: $wrapperVersion, tag: $wrapperTag, repo: "chdb-io/chdb", wheel: $wrapperWheel},
-    systems: $systems}' >"$tmp"
+    systems: $systems,
+    tests: {
+      chdb: {hash: $chdbSrcHash},
+      core: {hash: $coreSrcHash, sparseCheckout: ($corePaths | split("\n"))},
+      nanoarrow: {version: $naVersion, url: $naUrl, hash: $naHash},
+      rustCrate: {version: $rustVersion, url: $rustUrl, hash: $rustHash}
+    }}' >"$tmp"
 
 mkdir -p "$root/pkgs/chdb"
 mv "$tmp" "$root/pkgs/chdb/pin.json"
+mv "$work/chdb-rust.Cargo.lock" "$root/pkgs/chdb/chdb-rust.Cargo.lock"
 echo "pinned chdb-core $core_tag and chdb $wrapper_tag in pkgs/chdb/pin.json"
