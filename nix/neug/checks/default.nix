@@ -234,4 +234,39 @@ in
       runHook postCheck
     '';
   });
+
+  # The Python module, in the Python of nixpkgs: it imports, opens a database, loads the
+  # extensions by name from the prefix of the library, and answers. The same script in a
+  # Python that has everything but the module must fail, and so must LOAD where the module
+  # is told that there are no extensions.
+  python =
+    let
+      neugPython = pkgs.python3Packages.callPackage ../../../pkgs/neug/python.nix { };
+      withNeug = pkgs.python3.withPackages (_: [ neugPython ]);
+      without = pkgs.python3.withPackages (ps: [
+        ps.packaging
+        ps.protobuf5
+        ps.requests
+      ]);
+    in
+    pkgs.runCommand "neug-python-check" { } ''
+      export HOME=$TMPDIR
+      cd $TMPDIR
+
+      ${withNeug}/bin/python ${./python-smoke.py} ${neug}/lib ${extensions}
+
+      if ${without}/bin/python ${./python-smoke.py} ${neug}/lib ${extensions} >/dev/null 2>&1; then
+        echo "the script worked without the module, so this check shows nothing" >&2
+        exit 1
+      fi
+
+      mkdir empty
+      ${withNeug}/bin/python ${./python-load.py} parquet >/dev/null
+      if NEUG_EXTENSION_HOME_PYENV=$PWD/empty ${withNeug}/bin/python ${./python-load.py} parquet >/dev/null 2>&1; then
+        echo "LOAD parquet worked with no extensions to load" >&2
+        exit 1
+      fi
+
+      touch $out
+    '';
 }
