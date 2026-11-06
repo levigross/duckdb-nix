@@ -11,7 +11,7 @@ needs clang 21 and a nightly Rust, and it has 156 submodules) and is not done he
 
 | | version | what |
 |---|---|---|
-| `chdb` | chdb-core 26.9.0 | `libchdb.so` (554 MB), `chdb.h`, `chdb.hpp`, a pkg-config file |
+| `chdb` | chdb-core 26.9.0 | `libchdb.so` (554 MB), `chdb.h`, `chdb.hpp` (which [does not link](#c)), a pkg-config file |
 | `python3-chdb` | chdb 4.4.0 on chdb-core 26.9.0 | the Python module, with the engine inside |
 
 ```sh
@@ -34,15 +34,17 @@ the asset) says the same. That is all it proves: the file is the one the release
 The hashes are in `pkgs/chdb/pin.json`. The x86_64-linux and aarch64-linux assets are
 pinned; only x86_64-linux has been built, and macOS is not offered.
 
-The library needs nothing but the C library (it carries the rest inside; the symbol
-versions it uses are no newer than glibc 2.4) and a `RUNPATH` into the upstream's build
-directory, which the package removes. The Python module does not use this library: its
-wheel carries an engine of its own, from the same release.
+The library links to nothing but the C library (it carries the rest inside; the symbol
+versions it uses are no newer than glibc 2.4) and has a `RUNPATH` into the upstream's build
+directory, which the package removes. At run time it reads a store of certificate
+authorities and the time zone database from the file system, [below](#what-the-engine-reads-at-run-time).
+The Python module does not use this library: its wheel carries an engine of its own, from
+the same release.
 
 The two wheels both ship `chdb/__init__.py`. pip installs `chdb-core` first and `chdb`
 over it, and the Python module here unpacks them in that order.
 
-## C and C++
+## C
 
 ```sh
 cc prog.c $(pkg-config --cflags --libs chdb) -o prog
@@ -69,7 +71,32 @@ with chDB. `chdb_version()` is the version of chdb-core (`26.9.0`); the engine i
 logs the ClickHouse version it is built from (26.9.2.1).
 
 In the Nix sandbox the engine prints a warning with a stack trace that it cannot find the
-cgroup files. It is harmless.
+cgroup files. It is harmless, except that a test of the noise on stderr takes it for noise
+(see the checks).
+
+**The C++ header does not work with this release.** `chdb.hpp` declares and calls
+`CHDB::connect_chdb_with_exception`, and `libchdb.so` has no such symbol: of that name it
+exports only the C function `connect_chdb`. A C++ program that uses the header fails to link
+(`undefined reference to CHDB::connect_chdb_with_exception`), and the four C++ examples that
+chdb-core ships fail on top of that, because they write `chdb::` where the header's
+namespace is `CHDB`. The header is installed as the upstream ships it (it is the one in the
+source at the tag); `chdb-core-c-tests` records both failures. From C++, `chdb.h` is the way
+in.
+
+### What the engine reads at run time
+
+Two things from the file system, which the sandbox of a Nix build does not have:
+
+- a store of certificate authorities. Without one, an HTTPS request fails with "Cannot load
+  default CA certificates". `SSL_CERT_FILE` names it.
+- the time zone database. Without it a query that uses the ORC format fails with
+  `orc::TimezoneError`: "Time zone file /usr/share/zoneinfo/GMT does not exist. Please install
+  IANA time zone database and set TZDIR env". `TZDIR` names it.
+
+The checks set `SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt` and
+`TZDIR=${pkgs.tzdata}/share/zoneinfo`. A program run outside the sandbox on a system that has
+neither needs the same. The package sets nothing: it is a library, and there is no program
+of its own to wrap.
 
 ## Python
 
@@ -117,7 +144,9 @@ speaks its protocol, with `ureq` and **rustls**. The example exposes it as the f
 the same name and as a mode (`--s3 <url> write|read`).
 
 The crate says it is for engine v26.11.0-rc.2 and is used here with 26.9.0. The calls the
-example makes work, including the durable feature; the rest of the crate was not tried.
+example makes work, including the durable feature, and the crate's own test suite runs
+against our library (`chdb-rust-tests`, below): all of it passes but one case, which asks
+for the newer engine.
 
 ## Checks
 
@@ -137,9 +166,32 @@ and `If-Match` the protocol uses for its lease; it checks nothing else, and it d
 check signatures. rustls would not accept the self-signed certificate of a certificate
 authority as the certificate of the server itself, hence the two certificates.
 
+### Upstream's own tests
+
+Four more checks run the test suites of chDB itself, at the tags this repository pins, against
+the packages here. Each asserts its counts, so that tests dropped silently fail the check, and
+each has a control that must fail. They were built on unstable; the Python ones for chdb-core are
+offered only where nixpkgs has what they import (`adbc-driver-manager`, which 26.05 and 25.11
+lack).
+
+| | |
+|---|---|
+| `chdb-rust-tests` | the test suite of `chdb-rust` 2.1.0 against our `libchdb`, in two passes: the default features (244 tests pass) and `--features durable` (349 pass); 4 upstream benchmarks are `#[ignore]`d in each. One case of `runtime_faces`, `shutdown_after_mergetree_merges`, fails with this engine and says why itself: before v26.11.0-rc.2 `chdb_shutdown` is refused. The check requires exactly that case to fail with that message, so an engine that fixes it makes the check fail until the exception is removed. `durable_s3` needs a bucket and skips itself; the stand-in store of `chdb-rust-consumer-s3` covers what it asks of S3 |
+| `chdb-core-c-tests` | the 19 scripts in chdb-core's `examples/`, each compiling a C or C++ program against the header and the library and running it, as upstream does: 18 pass, one test inside them skips itself (a leak test that needs an AddressSanitizer build). The 19th, `runCppExamples`, must fail and does, for the reasons given under [C](#c). A script run against a header of the wrong version must fail |
+| `chdb-core-python-tests` | the tests in chdb-core's `tests/` with its own runner (`run_all.py`), against its wheel and our library: 1529 tests, 36 skipped (they need a remote ClickHouse, MinIO, MySQL, MongoDB or an AI provider). Eight fail and the check requires exactly those eight to fail: seven in `test_stdout_noise.py` and one in `test_wasm_udf.py`, which take the engine's message about missing cgroup files for noise on stderr; where the files can be read they pass. Three modules are left out because they read from the Internet: `test_delta_lake.py`, `test_issue60.py` and `test_on_df.py` (which downloads a file when it is imported) |
+| `chdb-datastore-tests` | the tests of chdb's Python part (`datastore/tests`, and those of `tests/` that concern the installed module): 11274 pass, 23 skip, 79 are expected failures, and 6 pass although upstream marks them expected to fail (stale markers, not strict). `test_writeback.py` (75 tests) runs against two ClickHouse servers on the loopback, as upstream's CI does, and `test_durable.py` has 50 and the agent tests 52. Left out: `TestRemoteClickHousePushdown` (2 tests), which sends `CREATE OR REPLACE TABLE function remote(...)`, not SQL; `test_agents_smolagents`, as `gradio` does not evaluate in nixpkgs; `tests/clickhouse_connect`, a separate pipeline upstream; the two tests that import duckdb or ibis skip themselves, since neither is installed (with the `duckdb` of this repository's overlay, evaluating `ibis-framework` fails, see [the overlay](duckdb.md#as-an-overlay)) |
+
+The engine needs a store of certificate authorities and the time zone database, which the
+sandbox lacks: these checks set `SSL_CERT_FILE` and `TZDIR`
+([above](#what-the-engine-reads-at-run-time)).
+
 ## Not done
 
 - Building the engine from source, which is what would make it auditable.
+- The C++ API (`chdb.hpp`): the release's library does not export what the header calls.
+- The engine of the release newer than v26.9.0 that the Rust crate asks for
+  (v26.11.0-rc.2 is a pre-release): the pin stays on the release.
+- The upstream tests run on unstable only.
 - Anything but x86_64-linux with glibc: the aarch64-linux assets are pinned and untried,
   macOS is not offered.
 - CPUs without AVX: the upstream's build flags were not read here, and the library was

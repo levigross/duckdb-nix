@@ -9,7 +9,7 @@ not.
 | Engine | What it is | How it is provided | For | Details |
 |---|---|---|---|---|
 | DuckDB | analytical SQL | built from source (2.0.0, 1.5.2, 1.4.3), with the extensions that are not in DuckDB's tree linked in | CLI, `libduckdb`, Python, Rust | [docs/duckdb.md](docs/duckdb.md) |
-| chDB | ClickHouse as a library | the upstream's prebuilt `libchdb` and Python wheels, pinned by hash. They are not signed | C and C++, Python, Rust | [docs/chdb.md](docs/chdb.md) |
+| chDB | ClickHouse as a library | the upstream's prebuilt `libchdb` and Python wheels, pinned by hash. They are not signed | C (its C++ header does not link), Python, Rust | [docs/chdb.md](docs/chdb.md) |
 | NeuG | graph database (Cypher) | built from source (0.3.0), with its six extensions, which `LOAD` finds in the package | C++, Node.js | [docs/neug.md](docs/neug.md) |
 | zvec | vector database | built from source, the core libraries as NeuG's `vector_search` links them | C++ (static) | [docs/zvec.md](docs/zvec.md) |
 

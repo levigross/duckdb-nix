@@ -129,7 +129,10 @@ import nixpkgs { inherit system; overlays = [ duckdb-nix.overlays.default ]; }
 then `pkgs.duckdb.withExtensions (e: [ ... ])` as above. This replaces `pkgs.duckdb` for
 everything that uses it, which has a cost: `python3Packages.duckdb` of nixpkgs no longer
 evaluates, since its hash is for the DuckDB that nixpkgs ships; the module of this flake
-is `python3-duckdb`. Prefer `lib.duckdb` unless you want that replacement.
+is `python3-duckdb`. So does what depends on it: evaluating `python3Packages.ibis-framework`
+fails with "cannot coerce a function to a string", from the `pythonModule` of
+`pkgs/duckdb/default.nix` (met while running chDB's tests, which import ibis when it is
+there). Prefer `lib.duckdb` unless you want that replacement.
 
 ### From Rust or C++
 
