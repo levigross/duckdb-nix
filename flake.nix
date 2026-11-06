@@ -33,10 +33,10 @@
         ./nix/overlay.nix
         ./nix/lib.nix
         ./nix/nixpkgs.nix
-        ./nix/packages.nix
         ./nix/devshell.nix
         ./nix/templates.nix
-        ./nix/checks.nix
+        # the engines: their packages and checks
+        ./nix/duckdb
       ];
     };
 }

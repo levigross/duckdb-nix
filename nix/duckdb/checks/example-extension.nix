@@ -3,7 +3,7 @@
 { pkgs }:
 
 let
-  hello = pkgs.callPackage ../../templates/extension/extension.nix { };
+  hello = pkgs.callPackage ../../../templates/extension/extension.nix { };
 in
 import ./all-extensions.nix {
   inherit pkgs;
