@@ -97,11 +97,12 @@ NeuG wants a git checkout and an ordinary Linux, and the sandbox has neither:
 |---|---|
 | `neug-library` | a program is built through the installed CMake package, loads each of the six extensions by name, runs a two-hop query and a wrong one; `LOAD` must fail when the extension directory is pointed at an empty one |
 | `neug-nodejs` | the addon runs in the `node` of nixpkgs: an in-memory database, the six extensions, the two-hop query, a wrong query that throws; without the package on the path of `node`, `require('neug')` must fail |
+| `neug-nodejs-tests` | the test suite of the addon, upstream's own (`npm test`): 5 files, 89 tests, of which 83 pass and 6 are skipped by the tests themselves, each with its reason in the test file (open issues, features not yet there). The data two files open is prepared with upstream's helper, in the build directory instead of `/tmp`. The same runner without the package on the path must fail |
 
 ## Not done
 
 - The Python module and Rust bindings (in progress).
-- The test suites of NeuG itself (C++, Python, Node.js) were not run.
+- The test suites of NeuG itself for C++ and Python were not run (Node.js was).
 - The service mode (`db.serve()`, an HTTP server) is built and was not tried.
 - `httpfs` loads; reading over the network was not tried, as the sandbox has none.
 - Other nixpkgs than unstable, and any system but x86_64-linux with glibc.
