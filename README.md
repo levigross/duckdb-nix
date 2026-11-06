@@ -2,16 +2,18 @@
 
 Databases that run inside your process, packaged so that a Nix build gets them whole:
 built from source, or a binary pinned by hash, and nothing fetched when the program runs.
-For each engine the C or C++ library, the Python module and a Rust program that links it
-are built and checked, on three nixpkgs.
+For each engine the aim is the library, a Python module and a Rust program that links it,
+built and checked on three nixpkgs. Each engine's page says which of them are, and which are
+not.
 
 | Engine | What it is | How it is provided | For | Details |
 |---|---|---|---|---|
 | DuckDB | analytical SQL | built from source (2.0.0, 1.5.2, 1.4.3), with the extensions that are not in DuckDB's tree linked in | CLI, `libduckdb`, Python, Rust | [docs/duckdb.md](docs/duckdb.md) |
 | chDB | ClickHouse as a library | the upstream's prebuilt `libchdb` and Python wheels, pinned by hash. They are not signed | C and C++, Python, Rust | [docs/chdb.md](docs/chdb.md) |
+| NeuG | graph database (Cypher) | built from source (0.3.0), with its six extensions, which `LOAD` finds in the package | C++, Node.js | [docs/neug.md](docs/neug.md) |
+| zvec | vector database | built from source, the core libraries as NeuG's `vector_search` links them | C++ (static) | [docs/zvec.md](docs/zvec.md) |
 
-Only x86_64-linux with glibc has been built. Each engine's page says what was built and
-checked, and what was not.
+Only x86_64-linux with glibc has been built.
 
 ## Using it
 
@@ -19,12 +21,14 @@ checked, and what was not.
 nix build github:levigross/duckdb-nix#duckdb-all      # DuckDB with every extension it can link
 nix build github:levigross/duckdb-nix#chdb            # libchdb and its header
 nix build github:levigross/duckdb-nix#python3-chdb    # the Python module of chDB
+nix build github:levigross/duckdb-nix#neug            # libneug and its six extensions
 nix flake show github:levigross/duckdb-nix            # everything there is
 ```
 
-Every package exists for three nixpkgs: unstable under its own name, 26.05 with the
-prefix `stable-` and 25.11 with `previous-` (`#stable-chdb`, `#previous-duckdb-all`). A
-package that a nixpkgs cannot build is not offered there.
+Packages are offered for three nixpkgs: unstable under its own name, 26.05 with the prefix
+`stable-` and 25.11 with `previous-` (`#stable-chdb`, `#previous-duckdb-all`). A package that
+a nixpkgs cannot build is not offered there. Being offered is not being built: DuckDB and
+chDB were built and checked on all three, NeuG and zvec on unstable only so far.
 
 From your own flake, `lib.<engine>` takes your package set and gives the engine, built
 with it, without changing anything else in `pkgs`:
@@ -39,7 +43,8 @@ with it, without changing anything else in `pkgs`:
 }
 ```
 
-`overlays.default` adds `duckdb` (replacing nixpkgs' one), `duckdbVersions` and `chdb`.
+`overlays.default` adds `duckdb` (replacing nixpkgs' one), `duckdbVersions`, `chdb`, `neug` and
+`zvec`.
 Replacing `duckdb` has a cost, described in [the DuckDB page](docs/duckdb.md#as-an-overlay).
 
 ## How an engine is packaged
@@ -87,4 +92,4 @@ DuckDB, and CMake configuring DuckDB for each version on each nixpkgs.
 
 [Apache-2.0](LICENSE) for the Nix code and scripts in this repository. The engines, their
 extensions and the crates are not part of it and keep their own licenses: DuckDB MIT,
-chDB and ClickHouse Apache-2.0.
+chDB, ClickHouse, NeuG and zvec Apache-2.0.
