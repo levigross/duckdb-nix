@@ -1,0 +1,12 @@
+[package]
+name = "neug-rust-consumer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# the bindings of this repository; the library they link is the one Nix builds (NEUG_LIB_DIR)
+neug = { path = "../../bindings/rust/neug/neug" }
+
+# a workspace of its own: the bindings are another one
+[workspace]

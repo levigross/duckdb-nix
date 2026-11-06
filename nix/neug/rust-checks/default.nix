@@ -6,8 +6,33 @@ let
   inherit (pkgs) lib neug neug-c;
   extensions = lib.escapeShellArgs neug.extensions;
   shim = ../../../bindings/neug-c;
+  rust = import ../rust.nix { inherit pkgs; };
 in
 {
+  # A Rust program, with the engine in its own process through the crates: the graph, every
+  # kind of cell, transactions, the six extensions and the paths that fail. The same binary with
+  # its path to the library taken out must not start.
+  rust-consumer =
+    let
+      program = rust.program { };
+    in
+    pkgs.runCommand "neug-rust-consumer-check" { nativeBuildInputs = [ pkgs.patchelf ]; } ''
+      export HOME=$TMPDIR NEUG_DB_TMP_DIR=$TMPDIR GLOG_minloglevel=2
+      cd $TMPDIR
+
+      ${program}/bin/neug-rust-consumer ${extensions}
+
+      cp ${program}/bin/neug-rust-consumer stripped
+      chmod u+w stripped
+      patchelf --remove-rpath stripped
+      if ./stripped >/dev/null 2>&1; then
+        echo "the program ran without a path to libneug_c.so" >&2
+        exit 1
+      fi
+
+      touch $out
+    '';
+
   # A C program that includes only neug_c.h (none of the C++ headers of NeuG) uses the whole
   # interface: a graph and a two-hop question, every type, a NULL, parameters, a transaction
   # that is rolled back, the six extensions, and the paths that fail.
