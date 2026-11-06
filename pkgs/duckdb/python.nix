@@ -104,6 +104,21 @@ buildPythonPackage {
           --replace-fail 'BUILD_EXTENSIONS = "core_functions;json;parquet;icu"' 'BUILD_EXTENSIONS = "${inTree}"' \
           --replace-fail 'LINK_EXTENSIONS = ""' 'LINK_EXTENSIONS = "${linked}"'
       ''
+      + lib.optionalString (lib.elem "aws" names) ''
+        # The aws extension calls Aws::InitAPI() and sets the SDK's process-wide HTTP client
+        # factory every time a database loads it, with nothing to keep two databases that load it
+        # at once apart. Two threads that open the default connection together corrupt the heap
+        # (double free, unaligned tcache chunk): test_two_threads_open_the_default_connection
+        # failed in 14 of 60 runs, each in its own process, of a module with only this
+        # extension linked in, and in none of 60 with a module without any extension or with
+        # the loads serialized as below.
+        # The CLI and the Rust library load the same code and are not patched; the race was only
+        # observed through Python.
+        f=external/duckdb/extension_external/aws/src/aws_extension.cpp
+        substituteInPlace $f \
+          --replace-fail '#include <aws/core/Aws.h>' $'#include <aws/core/Aws.h>\n#include <mutex>' \
+          --replace-fail 'static void LoadInternal(ExtensionLoader &loader) {' $'static void LoadInternal(ExtensionLoader &loader) {\n\tstatic std::mutex aws_sdk_mutex;\n\tstd::lock_guard<std::mutex> aws_sdk_guard(aws_sdk_mutex);'
+      ''
     else
       ''
         # replace pybind11[global] with pybind11
