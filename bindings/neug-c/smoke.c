@@ -50,7 +50,9 @@ int main(int argc, char** argv) {
 
   /* one connection to a database that is read and written */
   neug_conn* second = NULL;
-  CHECK(neug_conn_open(db, &second, &err) != NEUG_OK && second == NULL);
+  /* the engine throws for it, so it is an exception whose text ends with the code of NeuG */
+  CHECK(neug_conn_open(db, &second, &err) == NEUG_E_EXCEPTION && second == NULL);
+  CHECK(strstr(neug_error_message(err), "Error Code: 4001") != NULL);
   printf("a second connection: %s\n", neug_error_message(err));
   neug_error_free(err);
   err = NULL;

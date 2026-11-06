@@ -56,7 +56,7 @@ enum {
   NEUG_E_COLUMN = 10003,        /* a column index out of range */
   NEUG_E_TYPE = 10004,          /* the getter does not match the type of the column */
   NEUG_E_ABI = 10005,           /* the library is not the one this header is of */
-  NEUG_E_EXCEPTION = 10006,     /* a C++ exception, with its text */
+  NEUG_E_EXCEPTION = 10006,     /* the engine threw: its text ends with the code of NeuG, "Error Code: 4001" */
   NEUG_E_PARAMETERS = 10007,    /* the parameters are not a JSON object */
   NEUG_E_OTHER = 10008          /* an exception that is not a std::exception */
 };
