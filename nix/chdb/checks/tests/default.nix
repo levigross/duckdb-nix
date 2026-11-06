@@ -10,5 +10,6 @@ let
 in
 {
   core-c-tests = import ./core-c.nix { inherit pkgs chdb pin; };
+  datastore-tests = import ./datastore.nix { inherit pkgs chdb pin; };
   rust-tests = import ./rust.nix { inherit pkgs chdb pin; };
 }
