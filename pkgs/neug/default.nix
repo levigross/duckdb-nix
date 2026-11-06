@@ -85,14 +85,30 @@ stdenv.mkDerivation {
     patch -p1 -d third_party/protobuf -i ../protobuf.patch
     patch -p1 -d third_party/gflags -i ../gflags.patch
     patch -p1 -d third_party/leveldb -i ../leveldb.patch
-    patch -p1 -d third_party/brpc -i ../brpc_cmake.patch
 
-    # scripts that the build runs, which name /usr/bin/env
-    patchShebangs third_party/brpc
-
-    # brpc defines __STRICT_ANSI__ itself, and nothing of brpc looks at it. Together with GNU
-    # mode that makes libstdc++ of GCC 16 define its __int128 traits twice.
-    substituteInPlace third_party/brpc/CMakeLists.txt --replace-fail ' -D__STRICT_ANSI__"' '"'
+    # The service mode (Database.serve) is built with NeuG's second HTTP transport, cpp-httplib,
+    # which upstream builds on Windows only, and not with brpc, which it builds on Linux. The
+    # cause is in brpc: a bthread resumes on another thread after it suspends, and the compiler
+    # may keep the address of a thread-local variable across the suspension. brpc guards two of
+    # its variables against that, for Clang and for GCC on aarch64 only, and its own fix for the
+    # rest (apache/brpc#3713, 33 files, not in a release) does not apply to the 1.12.1 that NeuG
+    # vendors. libneug built by GCC 16 then crashes in serve() whenever a program loads it with
+    # dlopen, as Python and Node.js do (docs/neug.md has the evidence). Both transports define
+    # CreateDefaultServiceTransport, and the build chooses which of them it compiles.
+    substituteInPlace src/server/CMakeLists.txt --replace-fail \
+      '    if (WIN32)
+            # BRPC/bthread are unavailable' \
+      '    if (WIN32 OR NEUG_HTTPLIB_TRANSPORT)
+            # BRPC/bthread are unavailable'
+    substituteInPlace CMakeLists.txt \
+      --replace-fail \
+        '        if((NOT BRPC_INCLUDE_PATH) OR (NOT BRPC_LIB))' \
+        '        if(NOT NEUG_HTTPLIB_TRANSPORT AND ((NOT BRPC_INCLUDE_PATH) OR (NOT BRPC_LIB)))' \
+      --replace-fail \
+        '        include_directories(''${BRPC_INCLUDE_PATH})' \
+        '        if(BRPC_INCLUDE_PATH)
+                include_directories(''${BRPC_INCLUDE_PATH})
+            endif()'
 
     # the vendored yaml-cpp uses uint16_t without including <cstdint>, which GCC 15 no longer
     # lets pass
@@ -194,15 +210,16 @@ stdenv.mkDerivation {
     (lib.cmakeBool "BUILD_TEST" false)
     (lib.cmakeBool "BUILD_EXAMPLES" false)
     (lib.cmakeBool "BUILD_EXECUTABLES" false)
-    # the server of the service mode
+    # the server of the service mode, over cpp-httplib (see postPatch)
     (lib.cmakeBool "BUILD_HTTP_SERVER" true)
+    (lib.cmakeBool "NEUG_HTTPLIB_TRANSPORT" true)
     (lib.cmakeBool "ENABLE_BACKTRACES" false)
     (lib.cmakeBool "NEUG_PACKAGE_BUILD" false)
     (lib.cmakeBool "NEUG_NATIVE_ARCH" false)
     # the submodules ask for CMake versions that CMake 4 no longer accepts
     (lib.cmakeFeature "CMAKE_POLICY_VERSION_MINIMUM" "3.5")
-    # relative, as the vendored libraries (brpc) join them to the prefix, and nixpkgs gives
-    # absolute ones
+    # relative, as the vendored libraries join them to the prefix, and nixpkgs gives absolute
+    # ones
     (lib.cmakeFeature "CMAKE_INSTALL_LIBDIR" "lib")
     (lib.cmakeFeature "CMAKE_INSTALL_INCLUDEDIR" "include")
     (lib.cmakeFeature "BUILD_EXTENSIONS" (lib.concatStringsSep ";" extensions))
