@@ -1,4 +1,8 @@
 {
+  "googletest": {
+    "hash": "sha256-LVLEn+e7c8013pwiLzJiiIObyrlbBHYaioO/SWbItPQ=",
+    "tag": "v1.13.0"
+  },
   "hash": "sha256-59gDCGvYNtt+axMPU/BaZJlub+meHgXBGy+72jCGIdU=",
   "nodeAddonApi": {
     "hash": "sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==",

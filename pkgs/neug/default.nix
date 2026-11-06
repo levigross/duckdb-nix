@@ -59,6 +59,13 @@ let
   # package would have npm fetch them
   nodeAddonApi = fetchurl { inherit (pin.nodeAddonApi) url hash; };
 
+  # googletest, which the tests of NeuG fetch when CMake configures them (FetchContent)
+  googletest = fetchFromGitHub {
+    owner = "google";
+    repo = "googletest";
+    inherit (pin.googletest) tag hash;
+  };
+
 in
 stdenv.mkDerivation {
   pname = "neug";
@@ -231,7 +238,7 @@ stdenv.mkDerivation {
   '';
 
   passthru = {
-    inherit extensions zvec;
+    inherit extensions zvec googletest;
     # where LOAD looks, without INSTALL and without a network
     extensionHome = "${placeholder "out"}/lib";
   };

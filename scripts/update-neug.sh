@@ -38,6 +38,10 @@ if [ "$addon_hash" != "$(jq -r .integrity <<<"$addon")" ]; then
   exit 1
 fi
 
+# googletest, which the tests of NeuG fetch when CMake configures them: the tag its CMake names
+gtest_tag="$(gh api "repos/$repo/contents/third_party/gtest/CMakeLists.txt?ref=$rev" -H 'Accept: application/vnd.github.raw' | awk '/GIT_TAG/ {print $2}')"
+gtest_hash="$(nix flake prefetch "github:google/googletest/$gtest_tag" --json | jq -r .hash)"
+
 mkdir -p "$root/pkgs/neug"
 jq -S -n \
   --arg version "${tag#v}" \
@@ -47,7 +51,10 @@ jq -S -n \
   --arg addonVersion "$(jq -r .version <<<"$addon")" \
   --arg addonUrl "$addon_url" \
   --arg addonHash "$addon_hash" \
+  --arg gtestTag "$gtest_tag" \
+  --arg gtestHash "$gtest_hash" \
   '{version: $version, tag: $tag, rev: $rev, hash: $hash,
-    nodeAddonApi: {version: $addonVersion, url: $addonUrl, hash: $addonHash}}' >"$work/pin.json"
+    nodeAddonApi: {version: $addonVersion, url: $addonUrl, hash: $addonHash},
+    googletest: {tag: $gtestTag, hash: $gtestHash}}' >"$work/pin.json"
 mv "$work/pin.json" "$root/pkgs/neug/pin.json"
 echo "pinned $repo $tag ($rev) in pkgs/neug/pin.json"
