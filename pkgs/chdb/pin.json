@@ -1,0 +1,36 @@
+{
+  "repo": "chdb-io/chdb-core",
+  "systems": {
+    "aarch64-linux": {
+      "coreWheel": {
+        "hash": "sha256-RhSNP8Ht1tb3AZIr4PGOKqbmA0nkGLQw5pu7h6trlak=",
+        "url": "https://github.com/chdb-io/chdb-core/releases/download/v26.9.0/chdb_core-26.9.0-cp39-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl"
+      },
+      "libchdb": {
+        "hash": "sha256-BwEWhkzeb9sydvsbKHArOwAtpCA4u1nJnioTYN1/Me0=",
+        "url": "https://github.com/chdb-io/chdb-core/releases/download/v26.9.0/linux-aarch64-libchdb.tar.gz"
+      }
+    },
+    "x86_64-linux": {
+      "coreWheel": {
+        "hash": "sha256-cH4uw/4PeVO6yXlC6ut6HtHWax5W7O8/CqITD2H25zU=",
+        "url": "https://github.com/chdb-io/chdb-core/releases/download/v26.9.0/chdb_core-26.9.0-cp39-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
+      },
+      "libchdb": {
+        "hash": "sha256-xjmLzHHcWNEvuBVIVAqs1dgkiDDsgc7FN/UcEUZwVDs=",
+        "url": "https://github.com/chdb-io/chdb-core/releases/download/v26.9.0/linux-x86_64-libchdb.tar.gz"
+      }
+    }
+  },
+  "tag": "v26.9.0",
+  "version": "26.9.0",
+  "wrapper": {
+    "repo": "chdb-io/chdb",
+    "tag": "v4.4.0",
+    "version": "4.4.0",
+    "wheel": {
+      "hash": "sha256-udEVmxmhAaZQ5y4IVjHcw6CHnDH698CYv/PqUdu6La8=",
+      "url": "https://github.com/chdb-io/chdb/releases/download/v4.4.0/chdb-4.4.0-py3-none-any.whl"
+    }
+  }
+}
