@@ -29,7 +29,7 @@
   pyarrow,
   pytest-reraise,
   pytestCheckHook,
-  pythonOlder,
+  pytz,
   # { version, rev, src, python (the pin of duckdb-python), selected (the extensions),
   #   extensionConfig, extensionFlags, inTreeExtensions }
   build,
@@ -53,7 +53,7 @@ let
     fsspec
     numpy
   ]
-  ++ lib.optionals (pythonOlder "3.14") [
+  ++ [
     pandas
     pyarrow
   ];
@@ -188,11 +188,15 @@ buildPythonPackage {
     psutil
     pytest-reraise
     pytestCheckHook
+    pytz
   ]
   ++ allDependencies;
 
   # test flags from .github/workflows/Python.yml
-  pytestFlags = [ "--verbose" ];
+  pytestFlags = [
+    "--verbose"
+    "-Wignore::DeprecationWarning"
+  ];
   enabledTestPaths = if stdenv.hostPlatform.isDarwin then [ "tests/fast" ] else [ "tests" ];
 
   disabledTestPaths = [
@@ -229,12 +233,13 @@ buildPythonPackage {
 
   pythonImportsCheck = [ "duckdb" ];
 
-  # Every extension that was asked for is loaded, without INSTALL or LOAD
-  doInstallCheck = names != [ ];
-  installCheckPhase = ''
-    runHook preInstallCheck
-    cd "$(mktemp -d)"
-    HOME=$PWD python - <<'PY'
+  # Every extension that was asked for is loaded, without INSTALL or LOAD. It is a hook and
+  # not the installCheckPhase itself: pytestCheckHook runs the tests of duckdb-python only
+  # when no installCheckPhase is defined. In a subshell, so the tests still run in the sources.
+  postInstallCheck = ''
+    (
+      cd "$(mktemp -d)"
+      HOME=$PWD python - <<'PY'
     import duckdb
     names = ${builtins.toJSON names}
     loaded = {row[0] for row in duckdb.sql("SELECT extension_name FROM duckdb_extensions() WHERE loaded").fetchall()}
@@ -242,7 +247,7 @@ buildPythonPackage {
     assert not missing, f"not loaded: {missing}"
     print("loaded:", ", ".join(names))
     PY
-    runHook postInstallCheck
+    )
   '';
 
   meta = {
