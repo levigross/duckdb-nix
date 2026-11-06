@@ -14,6 +14,8 @@
   cmake,
   ninja,
   openssl,
+  # the client library mysql_scanner of 1.4 links
+  mysql84 ? null,
   callPackage,
   pybind11,
   scikit-build-core,
@@ -121,6 +123,18 @@ buildPythonPackage {
           --replace-fail 'foreach(ext IN LISTS BUILD_EXTENSIONS)' \
                          'foreach(ext IN LISTS BUILD_EXTENSIONS FLAKE_LINK_EXTENSIONS)'
       ''
+      +
+        lib.optionalString
+          (lib.versionOlder build.version "1.5" && mysql84 != null && lib.elem "mysql_scanner" names)
+          ''
+            # mysql_scanner of 1.4 links libmysqlclient.a, which is built for programs and keeps
+            # my_errno in thread-local storage of the initial-exec kind. That puts the whole block
+            # of thread-local storage of this module (about 10 KB) into the static block, which
+            # Python's dlopen has no room for: `import duckdb` fails with "cannot allocate memory
+            # in static TLS block". The shared library is built for this and has 4 bytes of it.
+            substituteInPlace external/duckdb/extension_external/mysql_scanner/CMakeLists.txt \
+              --replace-fail "${mysql84.static}/lib/libmysqlclient.a" "${mysql84}/lib/libmysqlclient.so"
+          ''
   );
 
   nativeBuildInputs = [
