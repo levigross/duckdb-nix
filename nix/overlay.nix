@@ -7,5 +7,6 @@
     # the official Rust toolchain, which the Rust parts of some extensions are built with
     inputs.rust-overlay.overlays.default
     (import ./duckdb/overlay.nix)
+    (import ./chdb/overlay.nix)
   ];
 }
