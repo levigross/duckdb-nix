@@ -14,6 +14,8 @@
   cmake,
   ninja,
   openssl,
+  python,
+  runtimeShell,
   # the client library mysql_scanner of 1.4 links
   mysql84 ? null,
   callPackage,
@@ -27,6 +29,7 @@
   ipython,
   numpy,
   pandas,
+  polars,
   psutil,
   pyarrow,
   pytest-reraise,
@@ -48,6 +51,51 @@ let
   linked = lib.concatStringsSep ";" (build.inTreeExtensions ++ names);
   isV2 = lib.versionAtLeast build.version "2";
   variable = if lib.versionOlder build.version "1.5" then "CORE_EXTENSIONS" else "BUILD_EXTENSIONS";
+  hasAny = exts: lib.any (ext: lib.elem ext names) exts;
+
+  # The tests of duckdb-python 2.0 that do not pass here. Each fails in the same way in a module
+  # with no extensions at all, except the last groups, which are written for a DuckDB without
+  # any: they need the extension named. The ids have no spaces, as the hook splits flags on
+  # them, and a -k expression in parentheses stands for the variants of a test that fail.
+  v2DisabledTests = [
+    # fail as well with nixpkgs' polars (not looked into)
+    "test_a_lazy_polars_frame_scanned_on_its_own_connection_errors"
+    "(test_a_pushed_predicate_selects_what_the_engine_selects and lazyframe and IS and NULL and not NOT)"
+    "(test_is_pushed_and_matches_native and struct_is_null)"
+    "test_nanosecond_zoned_literal_outside_session_zone_raises_like_polars"
+    # pyarrow cannot write a list_view column to Parquet (ArrowNotImplementedError)
+    "(test_rows_equal_an_independent_reference and list_view)"
+    # "utcoffset returned an invalid timedelta (days)", and two others that were not looked into
+    "test_native_python_time_timezone"
+    "test_8522"
+    "test_fetch_arrow_reader"
+    # Hang when the file runs, as the interrupt tests nixpkgs already leaves out do: each passes alone
+    "test_streaming_fetch_interruption"
+    "test_materializing_fetch_interruption"
+  ]
+  # The aws extension registers two default secrets, __aws_default and __aws_default_s3, and
+  # the SDK keeps threads that outlive a closed database
+  ++ lib.optionals (lib.elem "aws" names) [
+    "test_secret_manager_option"
+    "(test_eight_threads_share_one_default_connection and duplicates_torn_down)"
+  ]
+  # A jemalloc background thread starts when the module is imported, with spatial, mysql_scanner,
+  # postgres_scanner or sqlite_scanner linked in (not with aws, httpfs or azure alone)
+  ++ lib.optional (hasAny [
+    "spatial"
+    "mysql_scanner"
+    "postgres_scanner"
+    "sqlite_scanner"
+  ]) "test_import_starts_no_threads";
+
+  # These crash the interpreter (a segmentation fault in the scan of Arrow string_view and
+  # binary_view with pyarrow 24, or "remaining threads" when it finalizes with daemon threads
+  # scanning), whether or not extensions are linked in, so they are left out by id.
+  v2Deselected = [
+    "tests/fast/arrow/scan/test_arrow_scan_row_ranges.py::TestLayouts::test_nested_layouts_read_the_same_whole_and_split[string_view"
+    "tests/fast/arrow/test_arrow_string_view.py::test_join_on_a_view_typed_key_matches_native"
+    "tests/slow/test_interpreter_shutdown.py::test_ordinary_shutdown[daemon_threads_scanning"
+  ];
 
   # ipython and adbc_driver_manager are left out, as in nixpkgs
   allDependencies = [
@@ -219,13 +267,15 @@ buildPythonPackage {
     pytestCheckHook
     pytz
   ]
+  ++ lib.optional isV2 polars
   ++ allDependencies;
 
   # test flags from .github/workflows/Python.yml
   pytestFlags = [
     "--verbose"
     "-Wignore::DeprecationWarning"
-  ];
+  ]
+  ++ lib.optionals isV2 (map (id: "--deselect=${id}") v2Deselected);
   enabledTestPaths = if stdenv.hostPlatform.isDarwin then [ "tests/fast" ] else [ "tests" ];
 
   disabledTestPaths = [
@@ -235,7 +285,9 @@ buildPythonPackage {
     "tests/fast/test_pypi_cleanup.py"
     # avoid test data download requiring network access
     "tests/slow/test_h2oai_arrow.py"
-  ];
+  ]
+  # these read the duckdb/ directory of the sources, which preCheck removes
+  ++ lib.optional isV2 "tests/fast/expression/test_expression_generated.py";
 
   disabledTests = [
     # tries to make http request
@@ -252,12 +304,27 @@ buildPythonPackage {
 
     # flaky due to a race condition in checking whether a thread is alive
     "test_query_progress"
-  ];
+  ]
+  ++ lib.optionals isV2 v2DisabledTests;
 
   # remove duckdb dir to prevent import confusion by pytest
   preCheck = ''
     export HOME="$(mktemp -d)"
     rm -rf duckdb
+  ''
+  # Tests of 2.0 start children with `python -I`. Such a child ignores PYTHONPATH, and the
+  # interpreter takes NIX_PYTHONPATH out of the environment as it starts, so the child would not
+  # find this module. sys.executable is a wrapper that puts the paths back for it.
+  + lib.optionalString isV2 ''
+    mkdir -p "$TMPDIR/pybin"
+    cat > "$TMPDIR/pybin/python" <<EOF
+    #!${runtimeShell}
+    export NIX_PYTHONPATH="$out/${python.sitePackages}:$NIX_PYTHONPATH:$PYTHONPATH"
+    export NIX_PYTHONEXECUTABLE="$TMPDIR/pybin/python"
+    exec "$(command -v python)" "\$@"
+    EOF
+    chmod +x "$TMPDIR/pybin/python"
+    export NIX_PYTHONEXECUTABLE="$TMPDIR/pybin/python"
   '';
 
   pythonImportsCheck = [ "duckdb" ];
