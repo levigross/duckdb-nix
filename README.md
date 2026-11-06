@@ -96,7 +96,7 @@ duckdb.withExtensions (e: [ e.httpfs e.spatial ])
 | overlay | `pkgs.duckdbVersions."1.4"`; `pkgs.duckdb` is still 2.0.0 |
 | command line | `nix shell github:levigross/duckdb-nix#duckdb-1_4-httpfs`, or `#previous-duckdb-1_4-all` to build it with nixpkgs 25.11 (`#stable-duckdb-1_5-all` for 1.5 with 26.05) |
 | Rust or C++ | `lib.getLib duckdb` and `lib.getDev duckdb` of the one you chose, as in [From Rust or C++](#from-rust-or-c); the `duckdb` crate must be the one for that DuckDB |
-| Python | `(duckdb.withExtensions (e: [ e.httpfs ])).pythonModule python3Packages`, or the package `python3-duckdb-all` (2.0): the module with the extensions linked in. The module of 1.4 [does not build yet](#python-module) |
+| Python | `(duckdb.withExtensions (e: [ e.httpfs ])).pythonModule python3Packages`, or the package `python3-duckdb-all` (2.0): the module with the extensions linked in; `python3-duckdb-1_5-all` and `python3-duckdb-1_4-all` for the other lines. [Which of them have been built](#python-module) |
 
 `map (e: e.name) duckdb.linkableExtensions` lists what that version can link with your
 nixpkgs. An extension its release does not have fails with a message that says so, not
@@ -175,7 +175,7 @@ gets the one in the `flake.lock` of its `duckdb-nix` input.
 |---|---|---|---|---|
 | 2.0.0 | | 28 | `=1.20000.1` | `python3-duckdb` |
 | 1.5.2 | nixpkgs 26.05 | 24 | `=1.10502.0` | `python3-duckdb-1_5` |
-| 1.4.3 | nixpkgs 25.11 | 22, and duckpgq to load | `=1.4.3` | `python3-duckdb-1_4` (does not build yet) |
+| 1.4.3 | nixpkgs 25.11 | 22, and duckpgq to load | `=1.4.3` | `python3-duckdb-1_4` |
 
 What a version has is what its release has. `scripts/availability.sh` lists, for every
 version and nixpkgs, each extension that cannot be had and why; it prints this:
@@ -283,8 +283,7 @@ How this was checked: the session above runs as written with the extension built
 `loadable-extensions-1_4` check (and `previous-` and `stable-`) loads both builds into
 DuckDB 1.4.3 in the sandbox, runs graph queries and expects them to fail without the
 extension. The command lines above were not run against the registry's build outside that
-check, and the extension has not been loaded from the Python module of 1.4, which does
-not build yet.
+check, and the extension has not been loaded from the Python module of 1.4.
 
 duckpgq of the 2.0 line is another matter: it is linked in (`duckdb-duckpgq`), needs no
 `LOAD`, and is switched on with `SET active_grammar_extensions = ['duckpgq']`. 1.5.2 has
@@ -311,25 +310,70 @@ second run.
 
 #### Python module
 
-A module is built and checked by importing it and by checking that every extension it was
-given is loaded (`duckdb_extensions()`). The test suite of duckdb-python is not run.
+A module, with every extension its DuckDB can link, is checked in its build: it imports,
+every extension it was given shows as loaded in `duckdb_extensions()`, and the test suite
+of duckdb-python runs with pytest, as nixpkgs runs it. x86_64-linux:
 
-- **2.0.0** builds on unstable, and `import duckdb` shows all 28 extensions loaded. It has
-  not been built on 26.05 or 25.11, where `nanobind` 3 comes from `pkgs/duckdb/nanobind.nix`.
-- **1.5.2** builds on 26.05, and `import duckdb` shows all 24 extensions loaded. Its CMake
-  links only the extensions that `BUILD_EXTENSIONS` names, and the extensions of this flake
-  come in through `DUCKDB_EXTENSION_CONFIGS`, so the module links them by a loop that is
-  given their names. It is built without jemalloc, which DuckDB's CMake adds on Linux.
-  It has not been built on 25.11 or unstable.
-- **1.4.3** builds but does not import on 25.11: `cannot allocate memory in static TLS
-  block`. The module and the libraries it needs use more thread-local storage of the
-  initial-exec kind than glibc 2.40 sets aside when it loads a module. It is not jemalloc:
-  the module without it fails the same way. Loaded by hand, the built module imports once
-  the reserve is larger, with `GLIBC_TUNABLES=glibc.rtld.optional_static_tls=16384` in
-  the environment (4096 was not enough). The package's own checks do not set it, so the
-  package does not build.
+| | unstable | 26.05 | 25.11 |
+|---|---|---|---|
+| 2.0.0 | passes: 28 extensions, 16329 passed, 129 skipped, 54 deselected, 227 xfailed, 1 xpassed | not built | not built |
+| 1.5.2 | not built | passes: 24 extensions, 3261 passed, 35 skipped, 11 deselected, 9 xfailed | not built |
+| 1.4.3 | not built | passes: 22 extensions, 3289 passed, 34 skipped, 11 deselected, 3 xfailed | not built |
 
-The package `python3-duckdb-1_4*` exists so the failure can be reproduced.
+"Not built" means nothing was run, not that it fails. They are the same packages on another
+nixpkgs. The 2.0.0 module on 26.05 and 25.11 also depends on `nanobind` 3, which comes from
+`pkgs/duckdb/nanobind.nix` there and is untried.
+
+What was needed to get here, and is in `pkgs/duckdb/python.nix`:
+
+- **1.5**: its CMake links only the extensions that `BUILD_EXTENSIONS` names, and those
+  of this flake come in through `DUCKDB_EXTENSION_CONFIGS`, so the loop that links them
+  is given their names. The 1.x modules are built without jemalloc, which DuckDB's CMake
+  adds on Linux.
+- **1.4**: `import duckdb` failed with `cannot allocate memory in static TLS block`, on 25.11
+  and on 26.05 (so it is not the glibc of 25.11). The cause is `mysql_scanner`, which linked
+  `libmysqlclient.a`, built for programs: it keeps `my_errno` in thread-local storage of the
+  initial-exec kind, which puts the whole thread-local block of the module (about 10 KB)
+  into the small static reserve glibc keeps for modules loaded later. The module without
+  `mysql_scanner` imported, and so did the full one with a larger reserve
+  (`GLIBC_TUNABLES=glibc.rtld.optional_static_tls=16384`; 4096 was not enough). The shared
+  `libmysqlclient.so` has 4 bytes of it, and linking that fixes the module. It is not
+  jemalloc. The CLI is unaffected, so it still links the static library.
+- **2.0**: the tests are run with the exclusions below, and tests that start `python -I`
+  get a `sys.executable` that finds the module (nixpkgs' interpreter takes
+  `NIX_PYTHONPATH` out of the environment as it starts).
+
+Tests left out of the 2.0.0 module (the 1.x modules leave out only what nixpkgs does),
+each by id in `pkgs/duckdb/python.nix` with its reason:
+
+- **Failing the same on a module with no extension linked in** (found by building one):
+  four tests with polars, one writing a `list_view` column to Parquet that pyarrow cannot
+  write, a time zone test (`utcoffset returned an invalid timedelta`), and two more whose cause was not looked into
+  (`test_8522`, `test_fetch_arrow_reader`), two interrupt tests that hang when their file
+  runs and pass alone, and three groups that crash the interpreter (scanning Arrow
+  `string_view` with pyarrow 24, and the shutdown with daemon threads that scan). Several
+  of these are not looked into: they are out because they fail without our extensions,
+  not because they are known to be wrong tests.
+- **Failing only with the extensions, because the test expects a bare DuckDB**: the aws
+  extension registers two default secrets and its SDK keeps threads after a database is
+  closed (two tests); with spatial, mysql_scanner, postgres_scanner or sqlite_scanner
+  linked in, a jemalloc background thread exists once the module is imported (one test).
+- The file `tests/fast/expression/test_expression_generated.py` reads the `duckdb/`
+  directory of the sources, which the check removes so that it cannot shadow the module.
+
+#### aws: two databases opened at the same time
+
+When the aws extension is linked in, two threads that each open their first database at
+the same moment can corrupt the heap (a double free). The extension initialises the AWS
+SDK and sets its process-wide HTTP client factory every time a database loads it, with
+nothing that keeps two loads apart. Seen through Python: `test_two_threads_open_the_default_connection`
+failed in 14 of 60 runs, each in its own process, of a module with only aws linked in,
+in none of 60 with no extension, and in none of 60 with the loads serialized.
+
+The Python module of 2.0 has that lock (`pkgs/duckdb/python.nix`, a mutex around the load).
+The CLI and the Rust library load the same code and do not; the race was only observed
+through Python, and the aws extension of 1.5.2 and 1.4.3 was not read. Until the extension
+itself is patched, open one database or connection before starting threads that open more.
 
 The `duckdb` crate that goes with a release is the one named in the table. For 1.5.2 and
 2.0.0 it is numbered `1.<major * 10000 + minor * 100 + patch>.<n>`; `update.sh` finds it.
@@ -457,8 +501,11 @@ an extension is absent, and C++ tests that cannot run with `postgres_scanner` or
   aarch64-darwin are untried.
 - Size: `libduckdb.so` with all 28 is 911 MB, mostly lance's DataFusion stack. Link
   only what you use.
-- The Python module of 1.4 ([above](#python-module)), and the modules of 2.0 and 1.5 on
-  the nixpkgs they have not been built on, and the test suite of duckdb-python.
+- The Python modules marked "not built" in [the table above](#python-module): six of the
+  nine pairs. Not built is not the same as not working; nothing is known about them.
+- The aws extension of the CLI and the Rust library, which has the
+  [race described above](#aws-two-databases-opened-at-the-same-time) without the lock the
+  Python module of 2.0 has.
 
 ## License
 
