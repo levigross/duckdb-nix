@@ -13,7 +13,9 @@ let
     ps.pyarrow
   ]);
 in
-{
+# the upstream test suites (tests/)
+(import ./tests { inherit pkgs; })
+// {
   # A C program links libchdb, and the engine answers: a sum, the version of the pin, and a
   # round trip through Parquet. A wrong query must come back as an error.
   library = pkgs.runCommandCC "chdb-library-check" { } ''
