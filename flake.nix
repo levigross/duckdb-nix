@@ -38,6 +38,7 @@
         # the engines: their packages and checks
         ./nix/duckdb
         ./nix/chdb
+        ./nix/zvec
       ];
     };
 }

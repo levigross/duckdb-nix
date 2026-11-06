@@ -12,5 +12,8 @@
 
     # chDB, ClickHouse in your process: libchdb with its header, and `pythonModule`
     chdb = pkgs: (pkgs.extend self.overlays.default).chdb;
+
+    # zvec, an in-process vector database: its core libraries, as NeuG links them
+    zvec = pkgs: (pkgs.extend self.overlays.default).zvec;
   };
 }

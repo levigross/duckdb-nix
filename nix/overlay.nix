@@ -8,5 +8,6 @@
     inputs.rust-overlay.overlays.default
     (import ./duckdb/overlay.nix)
     (import ./chdb/overlay.nix)
+    (import ./zvec/overlay.nix)
   ];
 }
