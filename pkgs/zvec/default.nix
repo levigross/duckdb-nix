@@ -22,6 +22,12 @@
 
 let
   pin = lib.importJSON ./pin.json;
+
+  # A Cube (the value of a parameter) keeps a small value in the storage of a pointer, which it
+  # writes as the value and reads as a pointer when it is moved. GCC 15 and later, which go by
+  # the types of the accesses, then take the value for not written: every parameter of a type
+  # that small (an int, a float, a bool) read back as 0. See cube-storage.patch.
+  cubePatch = ./cube-storage.patch;
 in
 stdenv.mkDerivation {
   pname = "zvec";
@@ -33,6 +39,11 @@ stdenv.mkDerivation {
     inherit (pin) rev hash;
     fetchSubmodules = true;
   };
+
+  patches = [ cubePatch ];
+
+  # headers as the extension of NeuG, which has its own copy of them, must have them too
+  passthru = { inherit cubePatch; };
 
   postPatch = ''
     # The patches of its thirdparty that zvec applies with `git apply`, which does nothing

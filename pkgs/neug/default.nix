@@ -124,6 +124,10 @@ stdenv.mkDerivation {
     # the libraries of the package zvec: they must be of the same commit
     diff -r ${zvec.src}/src/include third_party/zvec/src/include
 
+    # The headers of the package zvec are repaired (see there), and these must be too: the
+    # extension and the libraries must not have two versions of the same inline code
+    patch -p1 -d third_party/zvec -i ${zvec.cubePatch}
+
     # zvec is built already (the package zvec): where the build would make it as an external
     # project, NEUG_ZVEC_PREBUILT names the directory with its libraries
     substituteInPlace cmake/BuildZVecAsThirdParty.cmake \
