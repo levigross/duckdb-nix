@@ -5,6 +5,7 @@
 let
   inherit (pkgs) neug;
   extensions = pkgs.lib.escapeShellArgs neug.extensions;
+  neugPython = pkgs.python3Packages.callPackage ../../../pkgs/neug/python.nix { };
 in
 {
   library = pkgs.stdenv.mkDerivation {
@@ -241,7 +242,6 @@ in
   # is told that there are no extensions.
   python =
     let
-      neugPython = pkgs.python3Packages.callPackage ../../../pkgs/neug/python.nix { };
       withNeug = pkgs.python3.withPackages (_: [ neugPython ]);
       without = pkgs.python3.withPackages (ps: [
         ps.packaging
@@ -264,6 +264,36 @@ in
       ${withNeug}/bin/python ${./python-load.py} parquet >/dev/null
       if NEUG_EXTENSION_HOME_PYENV=$PWD/empty ${withNeug}/bin/python ${./python-load.py} parquet >/dev/null 2>&1; then
         echo "LOAD parquet worked with no extensions to load" >&2
+        exit 1
+      fi
+
+      touch $out
+    '';
+
+  # The service mode (Database.serve, an HTTP server) through the module. The interpreter
+  # loads libneug with dlopen, so its thread-locals are in dynamic TLS, and the server of
+  # upstream's Linux build (brpc) crashed in a worker thread a second after serve() with them,
+  # in the compiler that makes TLS descriptors (docs/neug.md has the evidence). The package
+  # serves over cpp-httplib instead. python-serve-repro.py is the script that showed the crash
+  # (a segmentation fault, status 139). python-serve.py asks the server a query with plain HTTP
+  # requests, compares the answer, asks what the transport must do as brpc did (a path that
+  # starts with two slashes is routed, 200 requests on one connection take under 2.5 s) and
+  # stops it. Both must end with status 0 within the time limit, so a crash or a hang fails.
+  # The same client where no server listens must fail.
+  python-serve =
+    let
+      withNeug = pkgs.python3.withPackages (_: [ neugPython ]);
+    in
+    pkgs.runCommand "neug-python-serve-check" { } ''
+      export HOME=$TMPDIR
+      cd $TMPDIR
+
+      timeout 120 ${withNeug}/bin/python ${./python-serve-repro.py}
+      timeout 120 ${withNeug}/bin/python ${./python-serve.py} serve
+
+      port=$(${withNeug}/bin/python -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+      if timeout 60 ${withNeug}/bin/python ${./python-serve.py} ask http://127.0.0.1:$port >/dev/null 2>&1; then
+        echo "the client got an answer where no server listens, so this check shows nothing" >&2
         exit 1
       fi
 
