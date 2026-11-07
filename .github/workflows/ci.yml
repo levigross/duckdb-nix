@@ -13,10 +13,11 @@ concurrency:
 permissions:
   contents: read
 
-# These jobs build no DuckDB: a full build with the test suite takes hours and
-# does not fit a hosted runner (see "Checks" in the README). They cover what
-# breaks without one: style, evaluation, the pins and patches of every extension,
-# and CMake configuring DuckDB with all the extensions.
+# These jobs build no DuckDB and no NeuG: a full build with the test suite takes
+# hours and does not fit a hosted runner (see "Checks" in the README). They cover
+# what breaks without one: style, evaluation, the pins and patches of every
+# extension, CMake configuring DuckDB with all the extensions, and chDB, which is
+# a binary that is fetched, not built.
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -100,3 +101,15 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - run: nix build --no-link --print-build-logs .#${{ matrix.package }}
+
+  # chDB is the upstream's prebuilt library, pinned by hash: building it fetches
+  # 180 MB, checks the hash and patches the binary, and the check links a C
+  # program to it and runs a query.
+  chdb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: nix build --no-link --print-build-logs .#chdb .#checks.x86_64-linux.chdb-library
