@@ -42,6 +42,14 @@ fi
 gtest_tag="$(gh api "repos/$repo/contents/third_party/gtest/CMakeLists.txt?ref=$rev" -H 'Accept: application/vnd.github.raw' | awk '/GIT_TAG/ {print $2}')"
 gtest_hash="$(nix flake prefetch "github:google/googletest/$gtest_tag" --json | jq -r .hash)"
 
+# the protobuf that the Python module requires, exactly (pyproject.toml): the module is offered
+# for the nixpkgs whose protobuf5 is that version and for no other
+protobuf="$(gh api "repos/$repo/contents/tools/python_bind/pyproject.toml?ref=$rev" -H 'Accept: application/vnd.github.raw' | sed -n 's/.*"protobuf==\([0-9.]*\)".*/\1/p' | sort -u)"
+if [ -z "$protobuf" ] || [ "$(wc -l <<<"$protobuf")" != 1 ]; then
+  echo "tools/python_bind/pyproject.toml: expected one 'protobuf==X' requirement, got: ${protobuf:-none}" >&2
+  exit 1
+fi
+
 mkdir -p "$root/pkgs/neug"
 jq -S -n \
   --arg version "${tag#v}" \
@@ -53,8 +61,10 @@ jq -S -n \
   --arg addonHash "$addon_hash" \
   --arg gtestTag "$gtest_tag" \
   --arg gtestHash "$gtest_hash" \
+  --arg protobuf "$protobuf" \
   '{version: $version, tag: $tag, rev: $rev, hash: $hash,
     nodeAddonApi: {version: $addonVersion, url: $addonUrl, hash: $addonHash},
-    googletest: {tag: $gtestTag, hash: $gtestHash}}' >"$work/pin.json"
+    googletest: {tag: $gtestTag, hash: $gtestHash},
+    python: {protobuf: $protobuf}}' >"$work/pin.json"
 mv "$work/pin.json" "$root/pkgs/neug/pin.json"
 echo "pinned $repo $tag ($rev) in pkgs/neug/pin.json"

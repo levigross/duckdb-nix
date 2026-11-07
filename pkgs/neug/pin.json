@@ -9,6 +9,9 @@
     "url": "https://registry.npmjs.org/node-addon-api/-/node-addon-api-7.1.1.tgz",
     "version": "7.1.1"
   },
+  "python": {
+    "protobuf": "5.29.6"
+  },
   "rev": "78e6aa42907428b0b50fde2c0d107f6d8acb2bfa",
   "tag": "v0.3.0",
   "version": "0.3.0"

@@ -16,9 +16,6 @@ _:
           # the addon for Node.js, built with the library
           neug-nodejs = nixpkgs.neug.nodejs;
 
-          # the Python module, compiled against the installed library
-          python3-neug = nixpkgs.python3Packages.callPackage ../../pkgs/neug/python.nix { };
-
           # Development only: stop after CMake has configured
           dev-configure-neug = nixpkgs.neug.overrideAttrs {
             outputs = [ "out" ];
@@ -37,6 +34,17 @@ _:
             ];
           };
         }
+        # the module requires one version of protobuf, which not every nixpkgs has
+        //
+          lib.optionalAttrs
+            (
+              lib.meta.availableOn nixpkgs.stdenv.hostPlatform nixpkgs.neug
+              && import ./python-supported.nix nixpkgs
+            )
+            {
+              # the Python module, compiled against the installed library
+              python3-neug = nixpkgs.python3Packages.callPackage ../../pkgs/neug/python.nix { };
+            }
       );
     };
 }

@@ -235,7 +235,9 @@ in
       runHook postCheck
     '';
   });
-
+}
+# the Python module is not offered for a nixpkgs whose protobuf is not the one it requires
+// pkgs.lib.optionalAttrs (import ../python-supported.nix pkgs) {
   # The Python module, in the Python of nixpkgs: it imports, opens a database, loads the
   # extensions by name from the prefix of the library, and answers. The same script in a
   # Python that has everything but the module must fail, and so must LOAD where the module
