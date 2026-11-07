@@ -1,0 +1,31 @@
+--- a/src/server/httplib_transport.cc
++++ b/src/server/httplib_transport.cc
+@@ -119,11 +119,28 @@
+ void HttplibTransport::RegisterHandlers() {
+   auto* svr = server_.get();
+ 
++  // httplib sends the headers and the body of a response in two writes and does
++  // not set TCP_NODELAY by default: on a connection that is kept, Nagle's
++  // algorithm holds the body until the client's delayed ACK, 25 ms per request
++  // against 0.4 ms with BRPC. The listening socket's option is inherited by the
++  // sockets that are accepted from it.
++  svr->set_tcp_nodelay(true);
++
+   // Non-POST requests on the transaction endpoints must answer 405 with an
+   // Allow header to match the BRPC contract (asserted in test_db_svc.cc);
+   // httplib would otherwise fall through to its default 404.
+   svr->set_pre_routing_handler([](const httplib::Request& req,
+                                   httplib::Response& res) {
++    // BRPC routes a path with a run of slashes at its start as if it had one: a
++    // client whose endpoint ends with a slash (the Session of the Python
++    // package, for "http://host:port/") posts to "//cypher". httplib matches the
++    // path exactly, and answers 404. Routing comes after this handler, and the
++    // request is not const where httplib makes it.
++    auto& request = const_cast<httplib::Request&>(req);
++    const auto first = request.path.find_first_not_of('/');
++    if (first != std::string::npos && first > 1) {
++      request.path.erase(0, first - 1);
++    }
+     if (req.method != "POST" && (req.path == "/transactions" ||
+                                  req.path.rfind("/transactions/", 0) == 0)) {
+       res.status = 405;

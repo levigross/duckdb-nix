@@ -110,6 +110,11 @@ stdenv.mkDerivation {
                 include_directories(''${BRPC_INCLUDE_PATH})
             endif()'
 
+    # Two ways in which this transport differs from brpc, found by running the tests of the Python
+    # package against it: it does not set TCP_NODELAY (25 ms per request on a kept connection
+    # against 0.4 ms), and it does not route "//cypher" as "/cypher". See the patch.
+    patch -p1 -i ${./httplib-transport.patch}
+
     # the vendored yaml-cpp uses uint16_t without including <cstdint>, which GCC 15 no longer
     # lets pass
     sed -i '1i #include <cstdint>' third_party/yaml-cpp/src/emitterutils.cpp
