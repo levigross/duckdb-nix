@@ -12,7 +12,7 @@ lightning-fast, in-process vector database". Here it is packaged as the librarie
 nix build github:levigross/duckdb-nix#zvec
 ```
 
-There are also `stable-zvec` and `previous-zvec` (26.05 and 25.11), which have not been built,
+There are also `stable-zvec` and `previous-zvec` (26.05 and 25.11), built and tested as well,
 and `lib.zvec pkgs` for your own flake. It builds in about a minute on unstable.
 
 **It is not the latest zvec.** The commit is the one that the release of NeuG in this
@@ -100,4 +100,4 @@ that GCC 15 and later need, so the check adds it to its copy.
 ## Not done
 
 - A newer zvec than NeuG's, and its Python and C bindings.
-- Any system but x86_64-linux with glibc, and any nixpkgs but unstable.
+- Any system but x86_64-linux with glibc.
