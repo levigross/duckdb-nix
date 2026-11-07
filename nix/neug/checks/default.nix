@@ -299,4 +299,8 @@ in
 
       touch $out
     '';
+
+  # The test suite of the Python module, upstream's own, on the installed module, offline (the
+  # file says what is left out and why)
+  python-tests = import ./python-tests.nix { inherit pkgs neug neugPython; };
 }
