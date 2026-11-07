@@ -92,4 +92,146 @@ in
 
     touch $out
   '';
+
+  # Processes forked from one that has drawn a UUID draw the same ones (see fork_uuid.cc), which
+  # is why a case of upstream's test suite is left out of cpp-tests. This check holds the fact:
+  # it fails when the library no longer does it, and that is the time to put the case back.
+  # The control is the same program with a parent that has not drawn: the children differ.
+  fork-uuid = pkgs.stdenv.mkDerivation {
+    name = "neug-fork-uuid-check";
+    dontUnpack = true;
+    buildInputs = [ neug ];
+
+    buildPhase = ''
+      $CXX -std=c++20 -I${neug}/include ${./fork_uuid.cc} -L${neug}/lib -lneug \
+        -Wl,-rpath,${neug}/lib -o fork_uuid
+    '';
+
+    doCheck = true;
+    checkPhase = ''
+      ./fork_uuid seeded | tee seeded.out
+      test "$(tail -n1 seeded.out)" = equal
+
+      ./fork_uuid fresh | tee fresh.out
+      test "$(tail -n1 fresh.out)" = different
+    '';
+
+    installPhase = "touch $out";
+  };
+
+  # The C++ test suite of NeuG, upstream's own (about 1300 test cases in about 40 test programs),
+  # on the same source, patches and flags as the package with BUILD_TEST on. Upstream runs it as
+  # one ctest entry per program ("ctest -R <program>", in .github/workflows), because ctest also
+  # lists every case on its own; the same here. The extension tests find the extensions in the
+  # build directory, so the extension home built into this build is left unset, as upstream's is.
+  #
+  # Left out or changed, each with its reason:
+  #  - runtime_wait_test, test_http_server and test_db_svc: they are of the transport that the
+  #    package does not build (brpc, see pkgs/neug). They include the headers of brpc and bthread
+  #    (grep bthread/ and brpc/ in tests/: these three files, and no other): the first is of the
+  #    bthread wait of the scheduler, the second drives a brpc channel, the third links brpc and
+  #    bthread. The service is covered by test_array_service, and from the outside by the HTTP
+  #    check of the Python module.
+  #  - HTTPIntegrationTest, a case of httpfs_extension_test: it fetches a file from the network;
+  #    its own switch (HTTP_TEST_URL empty) skips it (extension/httpfs/tests/http_test.cc:1036)
+  #  - ConnectionReadOnlyTest.ConcurrentProcessesOpenDatabaseSimultaneously, a case of
+  #    test_connection: it forks two processes that open one database read-only at the same time.
+  #    Both draw the same UUID for the runtime directory they open, the first to close removes it,
+  #    and the other fails with "Failed to reserve runtime file ...: No such file or directory"
+  #    (the log of the build that left it out). Why they draw the same: the check neug-fork-uuid.
+  #    A defect of the library, still in upstream's main (src/utils/uuid.cc, 2026-11-06), and
+  #    not of the build. The other 27 cases of test_connection run.
+  #  - the two entries of ctest named TEST: CMake's gtest_add_tests reads the C++ files for the
+  #    macros of googletest and finds TEST( inside WSHORTEST(weight), a word of a query in a
+  #    string (tests/compiler/path_test.cpp, twice). They name no test; the cases themselves,
+  #    PathTest.WSHORTEST_PATH and PathTest.WSHORTEST_COST, are in gopt_test, which runs them.
+  #
+  # Changed: test_array_service sends "parameters":null, and the parser of requests accepts an
+  # object only (src/main/query_request.cc:75, "Query parameters must be a JSON object."), so
+  # the case fails on any platform; neither the test nor that line is different in upstream's
+  # main (2026-11-06) and no workflow of upstream runs the program. It sends {} here, which is
+  # what a client sends (RequestSerializer, same file) and what the case is about: arrays.
+  #
+  # Sized: the two leak tests (test_node_create, test_temporary_tables) do nothing unless
+  # NEUG_RUN_MEMORY_LEAK_TESTS=1, and their own sizes are made for a day: with them
+  # test_node_create ran 42110 s (11.7 hours, one million single-row CREATEs) and
+  # test_temporary_tables 512 s, both passing. They run with the sizes of upstream's scheduled
+  # job (.github/workflows/weekly-memory-leak-test.yml: 10 x 10 rows, 100000 bulk rows, 200
+  # scans), which it runs weekly with the same binaries.
+  cpp-tests = neug.overrideAttrs (old: {
+    pname = "neug-cpp-tests";
+
+    postPatch = old.postPatch + ''
+      substituteInPlace tests/transaction/CMakeLists.txt \
+        --replace-fail 'add_neug_test(runtime_wait_test test_runtime_wait.cc)' ""
+      substituteInPlace tests/unittest/CMakeLists.txt \
+        --replace-fail 'add_neug_test(test_http_server test_http_server.cc)' "" \
+        --replace-fail 'add_neug_test(test_db_svc test_db_svc.cc)' ""
+      substituteInPlace tests/unittest/test_array_service.cc \
+        --replace-fail '"parameters":null' '"parameters":{}'
+    '';
+
+    outputs = [ "out" ];
+    postInstall = "";
+    # a directory: the fixup writes the propagated inputs of the package into $out/nix-support
+    installPhase = "mkdir -p $out";
+
+    cmakeFlags = old.cmakeFlags ++ [
+      (pkgs.lib.cmakeBool "BUILD_TEST" true)
+      (pkgs.lib.cmakeBool "BUILD_EXECUTABLES" true)
+      (pkgs.lib.cmakeBool "BUILD_NODEJS" false)
+      # with doCheck, nixpkgs stops passing this, and gflags and glog key on it
+      (pkgs.lib.cmakeBool "BUILD_TESTING" false)
+      (pkgs.lib.cmakeFeature "NEUG_EXTENSION_HOME" "")
+      # googletest is fetched by CMake: the sources of the version it names, no network
+      (pkgs.lib.cmakeFeature "FETCHCONTENT_SOURCE_DIR_GOOGLETEST" "${neug.googletest}")
+      (pkgs.lib.cmakeBool "FETCHCONTENT_FULLY_DISCONNECTED" true)
+    ];
+
+    doCheck = true;
+    # the tests use fixed names under /tmp and ports: one at a time
+    enableParallelChecking = false;
+
+    checkPhase = ''
+      runHook preCheck
+
+      S=$(realpath ..)
+      export MODERN_GRAPH_DATA_DIR=$S/example_dataset/modern_graph
+      export COMPREHENSIVE_GRAPH_DATA_DIR=$S/example_dataset/comprehensive_graph
+      export FLEX_DATA_DIR=$S/example_dataset/modern_graph
+      export TEST_PATH=$S/tests
+      export TEST_RESOURCE=$S/tests/compiler
+      export HTTP_TEST_URL=
+      export NEUG_DB_TMP_DIR=$TMPDIR
+      # the leak tests, which do nothing without it (tests/memory_leak/test_node_create.cc:53),
+      # at the sizes of upstream's scheduled run (see above)
+      export NEUG_RUN_MEMORY_LEAK_TESTS=1
+      export NEUG_LEAK_OUTER_ITERS=10
+      export NEUG_LEAK_INNER_ROWS=10
+      export NEUG_LEAK_CHECKPOINT_EVERY=500
+      export NEUG_LEAK_BULK_ROWS=100000
+      export NEUG_LEAK_SCAN_ITERS=200
+
+      # the two entries named TEST are the words of a query, not tests (see above): there are
+      # two, and the cases they stand next to are in the program that runs them
+      test "$(ctest -N | grep -c ': TEST$')" = 2
+      test "$(tests/compiler/gopt_test --gtest_list_tests | grep -c '^  WSHORTEST_')" = 2
+
+      # the test programs: the entries of ctest that are not a case of one (those have a dot)
+      programs=$(ctest -N | sed -n 's/^ *Test *#[0-9]*: //p' | grep -v '\.' \
+        | grep -vx -e TEST -e test_connection -e test_extension | sort -u | paste -sd'|')
+      echo "programs: $(echo "$programs" | tr '|' '\n' | wc -l)"
+      ctest -j1 --output-on-failure --no-tests=error -R "^($programs)$"
+
+      # this one reads another dataset
+      FLEX_DATA_DIR=$S/example_dataset/tinysnb ctest --output-on-failure --no-tests=error -R '^test_extension$'
+
+      # all of it but the one case (see above)
+      GTEST_FILTER=-ConnectionReadOnlyTest.ConcurrentProcessesOpenDatabaseSimultaneously \
+        ctest -V --no-tests=error -R '^test_connection$' | tee connection.log
+      grep -q '\[  PASSED  \] 31 tests' connection.log
+
+      runHook postCheck
+    '';
+  });
 }
